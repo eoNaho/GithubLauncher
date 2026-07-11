@@ -43,6 +43,15 @@
 								Stretch="{Binding Path=IsChecked, ElementName=IconFillCheckBox, Converter={StaticResource BooleanToStretchConverter}}" />
 						</Border>
 					</Panel>
+					<Border IsVisible="{Binding CanUpdate}"
+							Background="#FF9500"
+							CornerRadius="10"
+							Padding="8,3"
+							HorizontalAlignment="Left"
+							VerticalAlignment="Top"
+							Margin="12">
+						<TextBlock Text="UPDATE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+					</Border>
 					<Grid Margin="24">
 						<Grid.ColumnDefinitions>
 							<ColumnDefinition Width="*"/>
@@ -226,7 +235,18 @@
 								Stretch="{Binding Path=IsChecked, ElementName=IconFillCheckBox, Converter={StaticResource BooleanToStretchConverter}}" />
 							</Border>
 						</Panel>
-						
+
+						<!-- Update Badge - Top Left -->
+						<Border IsVisible="{Binding CanUpdate}"
+								Background="#FF9500"
+								CornerRadius="10"
+								Padding="8,3"
+								HorizontalAlignment="Left"
+								VerticalAlignment="Top"
+								Margin="12">
+							<TextBlock Text="UPDATE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+						</Border>
+
 						<!-- Options Button - Top Right -->
 						<Button Classes="options-grid"
 								Width="40"
