@@ -1004,8 +1004,30 @@
 						       HorizontalAlignment="Right"
 							   VerticalAlignment="Center">
 
-							<!-- Sorting ComboBox -->	
-							<TextBlock Text="Sort by:" 
+							<!-- Library Search -->
+							<TextBox x:Name="LibrarySearchTextBox"
+									 Watermark="Search library..."
+									 Foreground="{DynamicResource ThemeText}"
+									 Background="{DynamicResource ThemeDarker}"
+									 BorderBrush="{DynamicResource ThemeBorder}"
+									 BorderThickness="1"
+									 Width="160"
+									 Padding="8,6"
+									 CornerRadius="4"
+									 Margin="4,1,12,0"
+									 TextChanged="LibrarySearchTextBox_TextChanged"/>
+
+							<!-- Updates Only Filter -->
+							<CheckBox x:Name="ShowUpdatesOnlyCheckBox"
+									  Content="Updates only"
+									  Foreground="{DynamicResource ThemeText}"
+									  FontSize="13"
+									  Margin="0,1,12,0"
+									  Checked="ShowUpdatesOnlyCheckBox_Checked"
+									  Unchecked="ShowUpdatesOnlyCheckBox_Unchecked"/>
+
+							<!-- Sorting ComboBox -->
+							<TextBlock Text="Sort by:"
 									   Foreground="{DynamicResource ThemeTextSecondary}"
 									   FontSize="14"
 									   FontWeight="Medium"
@@ -1081,14 +1103,14 @@
 				<!-- Main App List -->
 				<ScrollViewer VerticalScrollBarVisibility="Auto" x:Name="GameScrollViewer" Margin="30,20,30,30">
 					<Grid>
-						<ItemsControl ItemsSource="{Binding Games}" x:Name="ListViewControl"
+						<ItemsControl ItemsSource="{Binding FilteredGames}" x:Name="ListViewControl"
 									  IsVisible="{Binding ElementName=UseGridViewCheckBox, Path=!IsChecked}">
 							<ItemsControl.ItemTemplate>
 								<StaticResource ResourceKey="ListViewTemplate"/>
 							</ItemsControl.ItemTemplate>
 						</ItemsControl>
 
-						<ItemsControl ItemsSource="{Binding Games}" x:Name="GridViewControl"
+						<ItemsControl ItemsSource="{Binding FilteredGames}" x:Name="GridViewControl"
 									  IsVisible="{Binding ElementName=UseGridViewCheckBox, Path=IsChecked}">
 							<ItemsControl.ItemsPanel>
 								<ItemsPanelTemplate>
@@ -1099,6 +1121,13 @@
 								<StaticResource ResourceKey="GridViewTemplate"/>
 							</ItemsControl.ItemTemplate>
 						</ItemsControl>
+						<TextBlock x:Name="LibraryNoResultsText"
+								   Text="No apps match your search."
+								   FontSize="14"
+								   Foreground="{DynamicResource ThemeTextSecondary}"
+								   HorizontalAlignment="Center"
+								   VerticalAlignment="Center"
+								   IsVisible="False"/>
 						<Border x:Name="EmptyStateOverlay"
 								IsVisible="False"
 								HorizontalAlignment="Center"
@@ -2049,6 +2078,29 @@
 														Click="RefreshAppCatalog_Click"/>
 											</Grid>
 											<Border Height="1" Background="{DynamicResource ThemeBorder}" Margin="0,4,0,4"/>
+											<Grid ColumnSpacing="8">
+												<Grid.ColumnDefinitions>
+													<ColumnDefinition Width="*"/>
+													<ColumnDefinition Width="Auto"/>
+												</Grid.ColumnDefinitions>
+												<TextBox Grid.Column="0"
+														 x:Name="AppCatalogSearchTextBox"
+														 Watermark="Search apps or categories..."
+														 Foreground="{DynamicResource ThemeText}"
+														 Background="{DynamicResource ThemeBase}"
+														 BorderBrush="{DynamicResource ThemeBorder}"
+														 BorderThickness="1"
+														 Padding="12,10"
+														 CornerRadius="4"
+														 TextChanged="AppCatalogSearchTextBox_TextChanged"/>
+												<ComboBox Grid.Column="1"
+														  x:Name="AppCatalogCategoryFilterComboBox"
+														  Width="160"
+														  Foreground="{DynamicResource ThemeText}"
+														  Background="{DynamicResource ThemeBase}"
+														  BorderBrush="{DynamicResource ThemeBorder}"
+														  SelectionChanged="AppCatalogCategoryFilterComboBox_SelectionChanged"/>
+											</Grid>
 											<TextBlock x:Name="AppCatalogStatusText"
 													   Text="Loading catalog..."
 													   FontSize="12"
