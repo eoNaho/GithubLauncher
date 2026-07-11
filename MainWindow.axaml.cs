@@ -3995,6 +3995,7 @@ namespace GithubLauncher
             _isActivityOpen = true;
             ActivityPanel.IsVisible = true;
             HeaderTitleText.Text = "Activity";
+            ActivitySessionDetailPanel.IsVisible = false;
 
             UpdateActivityPeriodButtons();
             PopulateActivityPanel();
@@ -4036,9 +4037,16 @@ namespace GithubLauncher
 
         private sealed class ActivityRankingRow
         {
+            public string Key { get; init; } = string.Empty;
             public string Name { get; init; } = string.Empty;
             public string SessionsLabel { get; init; } = string.Empty;
             public string TotalLabel { get; init; } = string.Empty;
+        }
+
+        private sealed class ActivitySessionDetailRow
+        {
+            public string DateLabel { get; init; } = string.Empty;
+            public string DurationLabel { get; init; } = string.Empty;
         }
 
         private static string FormatActivityDuration(long totalSeconds)
@@ -4064,6 +4072,7 @@ namespace GithubLauncher
 
             ActivityRankingList.ItemsSource = ranking.Select(entry => new ActivityRankingRow
             {
+                Key = entry.Key,
                 Name = entry.Name,
                 SessionsLabel = entry.SessionCount == 1 ? "1 session" : $"{entry.SessionCount} sessions",
                 TotalLabel = FormatActivityDuration(entry.TotalSeconds)
@@ -4116,6 +4125,32 @@ namespace GithubLauncher
                 ActivityPeriod.Month => periodStart.ToString("MMM"),
                 _ => periodStart.ToString("d")
             };
+        }
+
+        private void ActivityRankingRow_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.DataContext is not ActivityRankingRow row)
+                return;
+
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            ActivitySessionDetailTitle.Text = $"SESSION HISTORY — {row.Name}";
+
+            var sessions = activityService.GetSessions(row.Key);
+            ActivitySessionDetailList.ItemsSource = sessions.Select(session => new ActivitySessionDetailRow
+            {
+                DateLabel = session.Start.ToString("yyyy-MM-dd HH:mm") + (session.Estimated ? " (estimated)" : string.Empty),
+                DurationLabel = FormatActivityDuration(session.DurationSeconds)
+            }).ToList();
+
+            ActivitySessionDetailPanel.IsVisible = true;
+        }
+
+        private void CloseActivitySessionDetail_Click(object sender, RoutedEventArgs e)
+        {
+            ActivitySessionDetailPanel.IsVisible = false;
         }
 
         private async void LoadGamesFromJson()

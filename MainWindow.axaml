@@ -595,6 +595,20 @@
 		<Setter Property="Foreground" Value="White"/>
 	</Style>
 
+	<Style Selector="Button.activityrow">
+		<Setter Property="Background" Value="Transparent"/>
+		<Setter Property="BorderThickness" Value="0"/>
+		<Setter Property="Padding" Value="8"/>
+		<Setter Property="CornerRadius" Value="6"/>
+		<Setter Property="HorizontalAlignment" Value="Stretch"/>
+		<Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+		<Setter Property="Cursor" Value="Hand"/>
+	</Style>
+
+	<Style Selector="Button.activityrow:pointerover">
+		<Setter Property="Background" Value="{DynamicResource ThemeLighter}"/>
+	</Style>
+
 	<!-- Grid Options Button Style -->
 	<Style Selector="Button.options-grid">
 		<Setter Property="Background" Value="{DynamicResource ThemeBase}"/>
@@ -2292,16 +2306,19 @@
 										<ItemsControl x:Name="ActivityRankingList">
 											<ItemsControl.ItemTemplate>
 												<DataTemplate>
-													<Grid Margin="0,8,0,0">
-														<Grid.ColumnDefinitions>
-															<ColumnDefinition Width="*"/>
-															<ColumnDefinition Width="Auto"/>
-															<ColumnDefinition Width="Auto"/>
-														</Grid.ColumnDefinitions>
-														<TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource ThemeText}" VerticalAlignment="Center"/>
-														<TextBlock Grid.Column="1" Text="{Binding SessionsLabel}" Foreground="{DynamicResource ThemeTextSecondary}" FontSize="12" Margin="0,0,16,0" VerticalAlignment="Center"/>
-														<TextBlock Grid.Column="2" Text="{Binding TotalLabel}" Foreground="{DynamicResource ThemeText}" FontWeight="Bold" VerticalAlignment="Center"/>
-													</Grid>
+													<Button Classes="activityrow"
+															Click="ActivityRankingRow_Click">
+														<Grid>
+															<Grid.ColumnDefinitions>
+																<ColumnDefinition Width="*"/>
+																<ColumnDefinition Width="Auto"/>
+																<ColumnDefinition Width="Auto"/>
+															</Grid.ColumnDefinitions>
+															<TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource ThemeText}" VerticalAlignment="Center"/>
+															<TextBlock Grid.Column="1" Text="{Binding SessionsLabel}" Foreground="{DynamicResource ThemeTextSecondary}" FontSize="12" Margin="0,0,16,0" VerticalAlignment="Center"/>
+															<TextBlock Grid.Column="2" Text="{Binding TotalLabel}" Foreground="{DynamicResource ThemeText}" FontWeight="Bold" VerticalAlignment="Center"/>
+														</Grid>
+													</Button>
 												</DataTemplate>
 											</ItemsControl.ItemTemplate>
 										</ItemsControl>
@@ -2310,6 +2327,52 @@
 												   Text="No play sessions recorded yet."
 												   Foreground="{DynamicResource ThemeTextSecondary}"
 												   IsVisible="False"/>
+									</StackPanel>
+								</Border>
+
+								<!-- Session History -->
+								<Border x:Name="ActivitySessionDetailPanel"
+										Background="{DynamicResource ThemeDarker}"
+										BorderBrush="{DynamicResource ThemeBorder}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16"
+										IsVisible="False">
+									<StackPanel Spacing="12">
+										<Grid>
+											<Grid.ColumnDefinitions>
+												<ColumnDefinition Width="*"/>
+												<ColumnDefinition Width="Auto"/>
+											</Grid.ColumnDefinitions>
+											<TextBlock Grid.Column="0"
+													   x:Name="ActivitySessionDetailTitle"
+													   Text="SESSION HISTORY"
+													   FontSize="16"
+													   FontWeight="Bold"
+													   Foreground="{DynamicResource ThemeText}"
+													   VerticalAlignment="Center"/>
+											<Button Grid.Column="1"
+													Classes="options"
+													Content="Close"
+													FontSize="12"
+													Click="CloseActivitySessionDetail_Click"/>
+										</Grid>
+										<Border Height="1" Background="{DynamicResource ThemeBorder}"/>
+
+										<ItemsControl x:Name="ActivitySessionDetailList">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<Grid Margin="0,6,0,0">
+														<Grid.ColumnDefinitions>
+															<ColumnDefinition Width="*"/>
+															<ColumnDefinition Width="Auto"/>
+														</Grid.ColumnDefinitions>
+														<TextBlock Grid.Column="0" Text="{Binding DateLabel}" Foreground="{DynamicResource ThemeTextSecondary}" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="1" Text="{Binding DurationLabel}" Foreground="{DynamicResource ThemeText}" FontWeight="Bold" VerticalAlignment="Center"/>
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
 									</StackPanel>
 								</Border>
 

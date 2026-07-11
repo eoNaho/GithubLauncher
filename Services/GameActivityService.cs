@@ -194,6 +194,17 @@ namespace GithubLauncher.Services
             }
         }
 
+        public List<PlaySession> GetSessions(string key)
+        {
+            lock (_lock)
+            {
+                if (string.IsNullOrWhiteSpace(key) || !_database.Games.TryGetValue(key, out var activity))
+                    return [];
+
+                return activity.Sessions.OrderByDescending(s => s.Start).ToList();
+            }
+        }
+
         public List<GameRankingEntry> GetRanking()
         {
             lock (_lock)
