@@ -4,6 +4,7 @@
         xmlns:anim="https://github.com/whistyun/AnimatedImage.Avalonia"
         xmlns:local="clr-namespace:GithubLauncher"
 		xmlns:asyncImageLoader="clr-namespace:AsyncImageLoader;assembly=AsyncImageLoader.Avalonia"
+		xmlns:lvc="using:LiveChartsCore.SkiaSharpView.Avalonia"
         Title="Github Launcher"
 		Width="1280" Height="720"
 		MinWidth="750" MinHeight="490"
@@ -68,7 +69,14 @@
 									   FontSize="13"
 									   Foreground="{DynamicResource ThemeTextSecondary}"
 									   Margin="0,6,0,0"/>
-							
+
+							<TextBlock Text="{Binding PlayTimeText}"
+									   FontSize="12"
+									   Foreground="{DynamicResource ThemeTextSecondary}"
+									   Margin="0,4,0,0"
+									   IsVisible="{Binding HasPlayTime}"
+									   ToolTip.Tip="{Binding PlayTimeTooltip}"/>
+
 							<StackPanel Orientation="Horizontal">
 								<TextBlock Text="Latest: "
 										   FontSize="12"
@@ -398,6 +406,15 @@
 									   TextWrapping="Wrap"
 									   Margin="0,0,0,2"/>
 
+							<TextBlock Text="{Binding PlayTimeText}"
+									   FontSize="10"
+									   Foreground="{DynamicResource ThemeTextSecondary}"
+									   TextAlignment="Left"
+									   TextWrapping="Wrap"
+									   Margin="0,0,0,2"
+									   IsVisible="{Binding HasPlayTime}"
+									   ToolTip.Tip="{Binding PlayTimeTooltip}"/>
+
 							<TextBlock FontSize="10" Foreground="{DynamicResource ThemeTextSecondary}" TextWrapping="Wrap" TextAlignment="Left">
 								<Run Text="Latest: "/>
 								<Run Text="{Binding LatestVersion}" Foreground="{DynamicResource ThemeTextSecondary}"/>
@@ -570,6 +587,12 @@
 		<Setter Property="Background" Value="{DynamicResource ThemeBase}"/>
 		<Setter Property="BorderBrush" Value="{DynamicResource ThemeBorder}"/>
 		<Setter Property="Foreground" Value="{DynamicResource ThemeText}"/>
+	</Style>
+
+	<Style Selector="Button.options.active">
+		<Setter Property="Background" Value="#FF9500"/>
+		<Setter Property="BorderBrush" Value="#FF9500"/>
+		<Setter Property="Foreground" Value="White"/>
 	</Style>
 
 	<!-- Grid Options Button Style -->
@@ -876,6 +899,25 @@
 							</Grid>
 						</Button>
 
+						<!-- Activity Button -->
+						<Button x:Name="ActivityButton"
+								Classes="settings"
+								Margin="0,0,0,4"
+								CornerRadius="8"
+								Width="216"
+								HorizontalAlignment="Left"
+								Click="ActivityButton_Click">
+							<StackPanel Orientation="Horizontal">
+								<TextBlock Text="⏱"
+										   FontSize="20"
+										   Width="32"
+										   TextAlignment="Center"
+										   VerticalAlignment="Center"
+										   Margin="0,0,12,0"/>
+								<TextBlock Text="Activity" VerticalAlignment="Center"/>
+							</StackPanel>
+						</Button>
+
 						<!-- Manage Apps Button -->
 						<Button x:Name="ManageGamesButton"
 								Classes="settings"
@@ -885,7 +927,7 @@
 								HorizontalAlignment="Left"
 								Click="ManageGamesButton_Click">
 							<StackPanel Orientation="Horizontal">
-								<Image Width="32" Height="32" 
+								<Image Width="32" Height="32"
 									   Source="avares://GithubLauncher/Assets/DefaultGame.png"
 									   Margin="0,0,12,0"/>
 								<TextBlock Text="Manage Apps" VerticalAlignment="Center"/>
@@ -2134,6 +2176,145 @@
 							</ScrollViewer>
 
 						</Grid>
+					</Grid>
+				</Border>
+
+				<!-- Activity Panel -->
+				<Border x:Name="ActivityPanel"
+						Grid.RowSpan="2"
+						Background="{DynamicResource ThemeBase}"
+						IsVisible="False"
+						ZIndex="100">
+					<Grid>
+						<Grid.RowDefinitions>
+							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="*"/>
+						</Grid.RowDefinitions>
+
+						<Border Grid.Row="0"
+								Background="{DynamicResource ThemeDarker}"
+								BorderBrush="{DynamicResource ThemeBorder}"
+								BorderThickness="0,0,0,1"
+								Padding="40,10">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Button x:Name="ActivityPeriodDayButton"
+										Classes="options"
+										Content="Day"
+										FontSize="12"
+										Click="ActivityPeriodDay_Click"/>
+								<Button x:Name="ActivityPeriodWeekButton"
+										Classes="options"
+										Content="Week"
+										FontSize="12"
+										Click="ActivityPeriodWeek_Click"/>
+								<Button x:Name="ActivityPeriodMonthButton"
+										Classes="options"
+										Content="Month"
+										FontSize="12"
+										Click="ActivityPeriodMonth_Click"/>
+							</StackPanel>
+						</Border>
+
+						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="40">
+							<StackPanel Spacing="20">
+
+								<!-- Summary Cards -->
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+									</Grid.ColumnDefinitions>
+
+									<Border Grid.Column="0"
+											Background="{DynamicResource ThemeDarker}"
+											BorderBrush="{DynamicResource ThemeBorder}"
+											BorderThickness="1"
+											CornerRadius="8"
+											Padding="16"
+											Margin="0,0,8,0">
+										<StackPanel>
+											<TextBlock Text="TOTAL PLAYTIME" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource ThemeTextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="ActivityTotalPlaytimeText" Text="0m" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+
+									<Border Grid.Column="1"
+											Background="{DynamicResource ThemeDarker}"
+											BorderBrush="{DynamicResource ThemeBorder}"
+											BorderThickness="1"
+											CornerRadius="8"
+											Padding="16"
+											Margin="4,0,4,0">
+										<StackPanel>
+											<TextBlock Text="SESSIONS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource ThemeTextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="ActivityTotalSessionsText" Text="0" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+
+									<Border Grid.Column="2"
+											Background="{DynamicResource ThemeDarker}"
+											BorderBrush="{DynamicResource ThemeBorder}"
+											BorderThickness="1"
+											CornerRadius="8"
+											Padding="16"
+											Margin="8,0,0,0">
+										<StackPanel>
+											<TextBlock Text="MOST PLAYED" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource ThemeTextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="ActivityMostPlayedText" Text="-" FontSize="18" FontWeight="Bold" Foreground="{DynamicResource ThemeText}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+										</StackPanel>
+									</Border>
+								</Grid>
+
+								<!-- Chart -->
+								<Border Background="{DynamicResource ThemeDarker}"
+										BorderBrush="{DynamicResource ThemeBorder}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="PLAYTIME" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource ThemeText}"/>
+										<Border Height="1" Background="{DynamicResource ThemeBorder}"/>
+										<lvc:CartesianChart x:Name="ActivityChart" Height="240"/>
+									</StackPanel>
+								</Border>
+
+								<!-- Ranking -->
+								<Border Background="{DynamicResource ThemeDarker}"
+										BorderBrush="{DynamicResource ThemeBorder}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="MOST PLAYED GAMES" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource ThemeText}"/>
+										<Border Height="1" Background="{DynamicResource ThemeBorder}"/>
+
+										<ItemsControl x:Name="ActivityRankingList">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<Grid Margin="0,8,0,0">
+														<Grid.ColumnDefinitions>
+															<ColumnDefinition Width="*"/>
+															<ColumnDefinition Width="Auto"/>
+															<ColumnDefinition Width="Auto"/>
+														</Grid.ColumnDefinitions>
+														<TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource ThemeText}" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="1" Text="{Binding SessionsLabel}" Foreground="{DynamicResource ThemeTextSecondary}" FontSize="12" Margin="0,0,16,0" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="2" Text="{Binding TotalLabel}" Foreground="{DynamicResource ThemeText}" FontWeight="Bold" VerticalAlignment="Center"/>
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+
+										<TextBlock x:Name="ActivityRankingEmptyText"
+												   Text="No play sessions recorded yet."
+												   Foreground="{DynamicResource ThemeTextSecondary}"
+												   IsVisible="False"/>
+									</StackPanel>
+								</Border>
+
+							</StackPanel>
+						</ScrollViewer>
 					</Grid>
 				</Border>
 

@@ -429,6 +429,71 @@ namespace GithubLauncher.Models
             }
         }
 
+        public string ActivityKey
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(FolderName))
+                    return FolderName;
+                if (!string.IsNullOrWhiteSpace(Repository))
+                    return Repository;
+                return Name ?? string.Empty;
+            }
+        }
+
+        public string PlayTimeText
+        {
+            get
+            {
+                var totalSeconds = GameManager?.ActivityService?.GetTotalSeconds(ActivityKey) ?? 0;
+                return totalSeconds > 0 ? $"Played: {FormatPlayTime(totalSeconds)}" : string.Empty;
+            }
+        }
+
+        public bool HasPlayTime => !string.IsNullOrEmpty(PlayTimeText);
+
+        public string PlayTimeTooltip
+        {
+            get
+            {
+                var activityService = GameManager?.ActivityService;
+                if (activityService == null)
+                    return string.Empty;
+
+                var totalSeconds = activityService.GetTotalSeconds(ActivityKey);
+                if (totalSeconds <= 0)
+                    return string.Empty;
+
+                var sessionCount = activityService.GetSessionCount(ActivityKey);
+                var lastSession = activityService.GetLastSession(ActivityKey);
+                var sessionWord = sessionCount == 1 ? "session" : "sessions";
+                var tooltip = $"Total: {FormatPlayTime(totalSeconds)} ({sessionCount} {sessionWord})";
+
+                if (lastSession != null)
+                {
+                    tooltip += $"\nLast session: {lastSession.Start:yyyy-MM-dd HH:mm} ({FormatPlayTime(lastSession.DurationSeconds)})";
+                }
+
+                return tooltip;
+            }
+        }
+
+        private static string FormatPlayTime(long totalSeconds)
+        {
+            var timeSpan = TimeSpan.FromSeconds(totalSeconds);
+            if (timeSpan.TotalHours >= 1)
+                return $"{(int)timeSpan.TotalHours}h {timeSpan.Minutes}m";
+
+            return $"{timeSpan.Minutes}m";
+        }
+
+        public void RefreshPlaytime()
+        {
+            DispatchPropertyChanged(nameof(PlayTimeText));
+            DispatchPropertyChanged(nameof(PlayTimeTooltip));
+            DispatchPropertyChanged(nameof(HasPlayTime));
+        }
+
         private double _downloadProgress;
         public double DownloadProgress
         {
@@ -2079,6 +2144,29 @@ namespace GithubLauncher.Models
 
                 var gameProcess = Process.Start(startInfo);
                 GameProcessStarted?.Invoke(gameProcess);
+
+                var activityService = GameManager?.ActivityService;
+                if (activityService != null)
+                {
+                    var activityKey = ActivityKey;
+                    activityService.StartSession(activityKey, Name ?? string.Empty, DateTime.Now);
+                    RefreshPlaytime();
+
+                    if (gameProcess != null)
+                    {
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await gameProcess.WaitForExitAsync();
+                            }
+                            catch { /* process may have already exited */ }
+
+                            activityService.EndSession(activityKey, DateTime.Now);
+                            RefreshPlaytime();
+                        });
+                    }
+                }
 
                 if (GameManager != null && Application.Current != null)
                 {

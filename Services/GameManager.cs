@@ -25,6 +25,7 @@ namespace GithubLauncher.Services
         public string AppsFolder => _appsFolder;
         public string GamesFolder => _appsFolder;
         public string CacheFolder => _cacheFolder;
+        public GameActivityService ActivityService { get; }
 
         private string _currentVersionString = string.Empty;
         public string CurrentVersionString
@@ -45,6 +46,7 @@ namespace GithubLauncher.Services
             _httpClient = new HttpClient();
             _httpClient.DefaultRequestHeaders.Add("User-Agent", Profile.UserAgent);
             _httpClient.Timeout = TimeSpan.FromMinutes(30);
+            ActivityService = new GameActivityService(AppDomain.CurrentDomain.BaseDirectory);
 
             try
             {

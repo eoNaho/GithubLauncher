@@ -14,6 +14,8 @@ using GitHubLauncher.Core.Services;
 using AsyncImageLoader;
 using GithubLauncher.Models;
 using GithubLauncher.Services;
+using LiveChartsCore;
+using LiveChartsCore.SkiaSharpView;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -241,6 +243,8 @@ namespace GithubLauncher
             }
         }
         private bool _isGamesManagerOpen = false;
+        private bool _isActivityOpen = false;
+        private ActivityPeriod _activityPeriod = ActivityPeriod.Day;
         public string InfoTextLength = "*";
         private SolidColorBrush _themeColorBrush = new(Colors.Transparent);
         public SolidColorBrush ThemeColorBrush
@@ -977,6 +981,8 @@ namespace GithubLauncher
             {
                 await _gameManager.LoadGamesAsync();
 
+                FinalizeOrphanActivitySessions();
+
                 ApplySorting();
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -996,6 +1002,20 @@ namespace GithubLauncher
             {
                 await Dispatcher.UIThread.InvokeAsync(() =>
                     _ = ShowMessageBoxAsync($"Failed to load apps: {ex.Message}", "Load Error"));
+            }
+        }
+
+        private void FinalizeOrphanActivitySessions()
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            activityService.FinalizeOrphanSessions();
+
+            foreach (var game in _gameManager.Games)
+            {
+                game.RefreshPlaytime();
             }
         }
 
@@ -1838,6 +1858,11 @@ namespace GithubLauncher
         {
             isSettingsPanelOpen = !isSettingsPanelOpen;
             SettingsPanel.IsVisible = isSettingsPanelOpen;
+
+            if (isSettingsPanelOpen)
+            {
+                CloseActivityPanel();
+            }
 
             if (isSettingsPanelOpen)
             {
@@ -3929,6 +3954,7 @@ namespace GithubLauncher
             // Hide other panels
             SettingsPanel.IsVisible = false;
             ChangelogPanel.IsVisible = false;
+            CloseActivityPanel();
 
             // Show Manage Apps panel
             _isGamesManagerOpen = true;
@@ -3946,6 +3972,150 @@ namespace GithubLauncher
 
             // Load apps from apps.json
             LoadGamesFromJson();
+        }
+
+        private void ActivityButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_isActivityOpen)
+            {
+                CloseActivityPanel();
+                return;
+            }
+
+            // Hide other panels
+            SettingsPanel.IsVisible = false;
+            ChangelogPanel.IsVisible = false;
+            var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
+            if (manageGamesPanel != null)
+            {
+                manageGamesPanel.IsVisible = false;
+            }
+            _isGamesManagerOpen = false;
+
+            _isActivityOpen = true;
+            ActivityPanel.IsVisible = true;
+            HeaderTitleText.Text = "Activity";
+
+            UpdateActivityPeriodButtons();
+            PopulateActivityPanel();
+        }
+
+        private void CloseActivityPanel()
+        {
+            _isActivityOpen = false;
+            ActivityPanel.IsVisible = false;
+        }
+
+        private void ActivityPeriodDay_Click(object sender, RoutedEventArgs e)
+        {
+            _activityPeriod = ActivityPeriod.Day;
+            UpdateActivityPeriodButtons();
+            PopulateActivityPanel();
+        }
+
+        private void ActivityPeriodWeek_Click(object sender, RoutedEventArgs e)
+        {
+            _activityPeriod = ActivityPeriod.Week;
+            UpdateActivityPeriodButtons();
+            PopulateActivityPanel();
+        }
+
+        private void ActivityPeriodMonth_Click(object sender, RoutedEventArgs e)
+        {
+            _activityPeriod = ActivityPeriod.Month;
+            UpdateActivityPeriodButtons();
+            PopulateActivityPanel();
+        }
+
+        private void UpdateActivityPeriodButtons()
+        {
+            ActivityPeriodDayButton.Classes.Set("active", _activityPeriod == ActivityPeriod.Day);
+            ActivityPeriodWeekButton.Classes.Set("active", _activityPeriod == ActivityPeriod.Week);
+            ActivityPeriodMonthButton.Classes.Set("active", _activityPeriod == ActivityPeriod.Month);
+        }
+
+        private sealed class ActivityRankingRow
+        {
+            public string Name { get; init; } = string.Empty;
+            public string SessionsLabel { get; init; } = string.Empty;
+            public string TotalLabel { get; init; } = string.Empty;
+        }
+
+        private static string FormatActivityDuration(long totalSeconds)
+        {
+            var timeSpan = TimeSpan.FromSeconds(totalSeconds);
+            if (timeSpan.TotalHours >= 1)
+                return $"{(int)timeSpan.TotalHours}h {timeSpan.Minutes}m";
+
+            return $"{timeSpan.Minutes}m";
+        }
+
+        private void PopulateActivityPanel()
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            ActivityTotalPlaytimeText.Text = FormatActivityDuration(activityService.GetTotalSecondsAllGames());
+            ActivityTotalSessionsText.Text = activityService.GetTotalSessionCountAllGames().ToString();
+
+            var ranking = activityService.GetRanking();
+            ActivityMostPlayedText.Text = ranking.Count > 0 ? ranking[0].Name : "-";
+
+            ActivityRankingList.ItemsSource = ranking.Select(entry => new ActivityRankingRow
+            {
+                Name = entry.Name,
+                SessionsLabel = entry.SessionCount == 1 ? "1 session" : $"{entry.SessionCount} sessions",
+                TotalLabel = FormatActivityDuration(entry.TotalSeconds)
+            }).ToList();
+
+            ActivityRankingEmptyText.IsVisible = ranking.Count == 0;
+
+            var bucketCount = _activityPeriod switch
+            {
+                ActivityPeriod.Day => 7,
+                ActivityPeriod.Week => 8,
+                ActivityPeriod.Month => 6,
+                _ => 7
+            };
+
+            var buckets = activityService.GetAggregatedTotals(_activityPeriod, bucketCount);
+
+            ActivityChart.Series = new ISeries[]
+            {
+                new ColumnSeries<double>
+                {
+                    Name = "Playtime (minutes)",
+                    Values = buckets.Select(b => b.TotalSeconds / 60.0).ToArray()
+                }
+            };
+
+            ActivityChart.XAxes = new[]
+            {
+                new Axis
+                {
+                    Labels = buckets.Select(b => FormatActivityBucketLabel(b.PeriodStart)).ToList()
+                }
+            };
+
+            ActivityChart.YAxes = new[]
+            {
+                new Axis
+                {
+                    Labeler = value => $"{value:0}m"
+                }
+            };
+        }
+
+        private string FormatActivityBucketLabel(DateTime periodStart)
+        {
+            return _activityPeriod switch
+            {
+                ActivityPeriod.Day => periodStart.ToString("ddd"),
+                ActivityPeriod.Week => periodStart.ToString("MM/dd"),
+                ActivityPeriod.Month => periodStart.ToString("MMM"),
+                _ => periodStart.ToString("d")
+            };
         }
 
         private async void LoadGamesFromJson()
