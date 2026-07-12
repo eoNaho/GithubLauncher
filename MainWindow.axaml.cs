@@ -16,6 +16,8 @@ using GithubLauncher.Models;
 using GithubLauncher.Services;
 using LiveChartsCore;
 using LiveChartsCore.SkiaSharpView;
+using LiveChartsCore.SkiaSharpView.Painting;
+using SkiaSharp;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -41,6 +43,156 @@ namespace GithubLauncher
         public ObservableCollection<GameInfo> FilteredGames { get; } = new();
         private string _librarySearchQuery = string.Empty;
         private bool _showUpdatesOnlyFilter = false;
+        public int UpdateCount => _gameManager?.Games.Count(g => g.CanUpdate) ?? 0;
+        public int DownloadCount => _gameManager?.Games.Count(g => g.IsDownloading) ?? 0;
+        public int InstalledCount => _gameManager?.Games.Count(g => g.IsInstalled) ?? 0;
+        public int LibraryCount => _gameManager?.Games.Count ?? 0;
+        private Dictionary<string, string>? _gameCategoryCache;
+
+        private void EnsureGameCategoryCache()
+        {
+            if (_gameCategoryCache != null)
+                return;
+
+            _gameCategoryCache = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var cachePath = AppCatalogCachePath;
+                if (File.Exists(cachePath))
+                {
+                    var json = File.ReadAllText(cachePath);
+                    using var doc = JsonDocument.Parse(json);
+                    foreach (var property in doc.RootElement.EnumerateObject())
+                    {
+                        var categoryName = property.Name;
+                        foreach (var item in property.Value.EnumerateArray())
+                        {
+                            var repo = item.TryGetProperty("repository", out var r) ? r.GetString() : null;
+                            var folder = item.TryGetProperty("folderName", out var f) ? f.GetString() : null;
+                            var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
+
+                            if (!string.IsNullOrEmpty(repo))
+                                _gameCategoryCache[repo] = categoryName;
+                            if (!string.IsNullOrEmpty(folder))
+                                _gameCategoryCache[folder] = categoryName;
+                            if (!string.IsNullOrEmpty(name))
+                                _gameCategoryCache[name] = categoryName;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading game category cache: {ex.Message}");
+            }
+        }
+
+        private string GetGameCategory(GameInfo game)
+        {
+            EnsureGameCategoryCache();
+            if (_gameCategoryCache != null)
+            {
+                if (!string.IsNullOrEmpty(game.Repository) && _gameCategoryCache.TryGetValue(game.Repository, out var catRepo))
+                    return catRepo;
+                if (!string.IsNullOrEmpty(game.FolderName) && _gameCategoryCache.TryGetValue(game.FolderName, out var catFolder))
+                    return catFolder;
+                if (!string.IsNullOrEmpty(game.Name) && _gameCategoryCache.TryGetValue(game.Name, out var catName))
+                    return catName;
+            }
+            return "Other Ports";
+        }
+
+        public int N64PortsCount => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("N64", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int GamecubeWiiCount => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("Gamecube", StringComparison.OrdinalIgnoreCase) || GetGameCategory(g).Contains("Wii", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int PlayStationCount => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("PlayStation", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int TwoDGamePortsCount => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("2D Game", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int Xbox360Count => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("Xbox 360", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int SystemEmulationCount => _gameManager?.Games.Count(g => GetGameCategory(g).Contains("System Emulation", StringComparison.OrdinalIgnoreCase)) ?? 0;
+        public int OtherPortsCount => _gameManager?.Games.Count(g => {
+            var cat = GetGameCategory(g);
+            return !cat.Contains("N64", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("Gamecube", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("Wii", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("PlayStation", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("2D Game", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("Xbox 360", StringComparison.OrdinalIgnoreCase) && 
+                   !cat.Contains("System Emulation", StringComparison.OrdinalIgnoreCase);
+        }) ?? 0;
+
+        private string _activeCategoryFilter = "All";
+        public string ActiveCategoryFilter
+        {
+            get => _activeCategoryFilter;
+            set
+            {
+                if (_activeCategoryFilter != value)
+                {
+                    _activeCategoryFilter = value;
+                    OnPropertyChanged(nameof(ActiveCategoryFilter));
+                    OnPropertyChanged(nameof(IsN64FilterActive));
+                    OnPropertyChanged(nameof(IsGamecubeWiiFilterActive));
+                    OnPropertyChanged(nameof(IsPlayStationFilterActive));
+                    OnPropertyChanged(nameof(Is2DGameFilterActive));
+                    OnPropertyChanged(nameof(IsXbox360FilterActive));
+                    OnPropertyChanged(nameof(IsSystemEmulationFilterActive));
+                    OnPropertyChanged(nameof(IsOtherPortsFilterActive));
+                    OnPropertyChanged(nameof(IsAllCategoriesFilterActive));
+                }
+            }
+        }
+
+        public bool IsN64FilterActive => ActiveCategoryFilter == "N64";
+        public bool IsGamecubeWiiFilterActive => ActiveCategoryFilter == "GamecubeWii";
+        public bool IsPlayStationFilterActive => ActiveCategoryFilter == "PlayStation";
+        public bool Is2DGameFilterActive => ActiveCategoryFilter == "2DGame";
+        public bool IsXbox360FilterActive => ActiveCategoryFilter == "Xbox360";
+        public bool IsSystemEmulationFilterActive => ActiveCategoryFilter == "SystemEmulation";
+        public bool IsOtherPortsFilterActive => ActiveCategoryFilter == "OtherPorts";
+        public bool IsAllCategoriesFilterActive => ActiveCategoryFilter == "All";
+
+        public bool HasUpdates => UpdateCount > 0;
+        public bool HasDownloads => DownloadCount > 0;
+        private bool _isCheckingUpdates;
+        private readonly DispatcherTimer _updateSpinTimer;
+        private double _updateIconAngle;
+        private string _updateButtonTitle = "Check for Updates";
+        private string _updateButtonSubtitle = "Ready";
+        public double UpdateIconAngle
+        {
+            get => _updateIconAngle;
+            private set
+            {
+                if (Math.Abs(_updateIconAngle - value) > 0.001)
+                {
+                    _updateIconAngle = value;
+                    OnPropertyChanged(nameof(UpdateIconAngle));
+                }
+            }
+        }
+        public string UpdateButtonTitle
+        {
+            get => _updateButtonTitle;
+            private set
+            {
+                if (_updateButtonTitle != value)
+                {
+                    _updateButtonTitle = value;
+                    OnPropertyChanged(nameof(UpdateButtonTitle));
+                }
+            }
+        }
+        public string UpdateButtonSubtitle
+        {
+            get => _updateButtonSubtitle;
+            private set
+            {
+                if (_updateButtonSubtitle != value)
+                {
+                    _updateButtonSubtitle = value;
+                    OnPropertyChanged(nameof(UpdateButtonSubtitle));
+                }
+            }
+        }
         public AppSettings _settings = new();
         public App _app = null!;
         public AppSettings Settings => _settings;
@@ -82,7 +234,7 @@ namespace GithubLauncher
                 }
             }
         }
-        private System.Threading.CancellationTokenSource? _fadeTaskCts;
+        private System.Threading.CancellationTokenSource? _fadeTaskCts = null;
         private const int FADE_DURATION_MS = 500;
         #if WINDOWS
         private IWavePlayer? _waveOut;
@@ -154,24 +306,17 @@ namespace GithubLauncher
                 }
             }
         }
-        public IBrush WindowBackground
+        public IBrush WindowBackground => FindThemeBrush("BackgroundBase");
+
+        private IBrush FindThemeBrush(string resourceKey)
         {
-            get
-            {
-                if (_settings?.WindowBorderRounding ?? false)
-                {
-                    if (IsFullscreen)
-                    {
-                        return this.Resources["ThemeDarker"] as IBrush ?? Brushes.Transparent;
-                    }
-                    if (_settings.ShowOSTopBar)
-                    {
-                        return this.Resources["ThemeDarker"] as IBrush ?? Brushes.Transparent;
-                    }
-                    return Brushes.Transparent;
-                }
-                return this.Resources["ThemeDarker"] as IBrush ?? Brushes.Transparent;
-            }
+            if (TryGetResource(resourceKey, ActualThemeVariant, out var resource) && resource is IBrush brush)
+                return brush;
+
+            if (Application.Current?.TryGetResource(resourceKey, ActualThemeVariant, out resource) == true && resource is IBrush appBrush)
+                return appBrush;
+
+            return Brushes.Transparent;
         }
         public bool ExtendClientAreaEnabled => !_settings.ShowOSTopBar;
         public ExtendClientAreaChromeHints ChromeHints
@@ -242,6 +387,21 @@ namespace GithubLauncher
                 }
             }
         }
+        private GameInfo? _featuredGameInfo;
+        public GameInfo? FeaturedGameInfo
+        {
+            get => _featuredGameInfo;
+            set
+            {
+                if (_featuredGameInfo != value)
+                {
+                    _featuredGameInfo = value;
+                    OnPropertyChanged(nameof(FeaturedGameInfo));
+                    OnPropertyChanged(nameof(IsFeaturedVisible));
+                }
+            }
+        }
+        public bool IsFeaturedVisible => FeaturedGameInfo != null;
         private bool _isGamesManagerOpen = false;
         private bool _isActivityOpen = false;
         private ActivityPeriod _activityPeriod = ActivityPeriod.Day;
@@ -274,10 +434,35 @@ namespace GithubLauncher
                 }
             }
         }
+        private readonly Dictionary<string, TextBox> _themeTokenTextBoxes = new();
+        private readonly Dictionary<string, Button> _themeTokenSwatches = new();
+        private bool _isUpdatingThemeEditor = false;
+        private static readonly (string Key, string Label)[] ThemeTokenDefinitions =
+        [
+            ("BackgroundBase", "Background"),
+            ("SidebarBackground", "Sidebar"),
+            ("Surface", "Surface"),
+            ("SurfaceAlt", "Surface Alt"),
+            ("InputBackground", "Inputs"),
+            ("Hover", "Hover"),
+            ("Border", "Border"),
+            ("Accent", "Accent"),
+            ("AccentHover", "Accent Hover"),
+            ("TextPrimary", "Text Primary"),
+            ("TextSecondary", "Text Secondary"),
+            ("TextMuted", "Text Muted"),
+            ("StatusInstalled", "Installed"),
+            ("StatusUpdate", "Update"),
+            ("StatusDownload", "Download"),
+            ("StatusNotInstalled", "Not Installed")
+        ];
 
         public MainWindow()
         {
             InitializeComponent();
+
+            _updateSpinTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+            _updateSpinTimer.Tick += (_, _) => UpdateIconAngle = (UpdateIconAngle + 9) % 360;
 
             try
             {
@@ -292,10 +477,17 @@ namespace GithubLauncher
             _gameManager = new GameManager();
             _gameManager.Games.CollectionChanged += (s, e) => RefreshFilteredGames();
 
-            // Initialize theme
-            ThemeColorBrush = new SolidColorBrush(Color.Parse(_settings?.PrimaryColor ?? "#18181b"));
-            SecondaryColorBrush = new SolidColorBrush(Color.Parse(_settings?.SecondaryColor ?? "#404040"));
-            UpdateThemeColors();
+            _settings.NormalizeTheme();
+            ApplyThemeResources();
+            UpdateThemeModeButtons();
+
+            this.ActualThemeVariantChanged += (_, _) =>
+            {
+                if (_settings.ThemeMode == "System")
+                {
+                    ApplyThemeResources();
+                }
+            };
 
             _gameManager.UnhideAllGames();
             LoadCurrentVersion();
@@ -363,31 +555,327 @@ namespace GithubLauncher
 
         private void UpdateThemeColors()
         {
-            if (_themeColorBrush == null || _secondaryColorBrush == null) return;
+            ApplyThemeResources();
+        }
 
-            var primaryColor = _themeColorBrush.Color;
-            var secondaryColor = _secondaryColorBrush.Color;
-            var themeBase = new SolidColorBrush(primaryColor);
-            var themeLighter = new SolidColorBrush(GetShadedColor(primaryColor, 1.3));
-            var themeDarker = new SolidColorBrush(GetShadedColor(primaryColor, 0.7));
-            var themeBorder = new SolidColorBrush(secondaryColor);
+        private void ApplyThemeResources()
+        {
+            _settings.NormalizeTheme();
+            var resources = ThemeService.BuildResources(_settings.Theme, ActualThemeVariant);
 
-            var textColor = CalculateLuminance(primaryColor) > 0.5 ? Colors.Black : Colors.White;
-            var tintedText = new SolidColorBrush(BlendColors(textColor, secondaryColor, 0.08));
-            var tintedTextSecondary = new SolidColorBrush(
-                CalculateLuminance(primaryColor) > 0.5
-                    ? BlendColors(Color.FromRgb(70, 70, 70), secondaryColor, 0.15)
-                    : BlendColors(Color.FromRgb(200, 200, 200), secondaryColor, 0.15)
-            );
-
-            Resources["ThemeBase"] = themeBase;
-            Resources["ThemeLighter"] = themeLighter;
-            Resources["ThemeDarker"] = themeDarker;
-            Resources["ThemeBorder"] = themeBorder;
-            Resources["ThemeText"] = tintedText;
-            Resources["ThemeTextSecondary"] = tintedTextSecondary;
+            foreach (var resource in resources)
+            {
+                Resources[resource.Key] = resource.Value;
+                if (Application.Current != null)
+                    Application.Current.Resources[resource.Key] = resource.Value;
+            }
 
             OnPropertyChanged(nameof(WindowBackground));
+            RefreshThemeEditorSwatches();
+
+            if (_gameManager?.Games != null)
+            {
+                foreach (var game in _gameManager.Games)
+                {
+                    game.RefreshThemeColors();
+                }
+            }
+        }
+
+        private void SetThemeMode(string mode)
+        {
+            _settings.ThemeMode = mode;
+            _settings.Theme.Mode = mode;
+            UpdateThemeModeButtons();
+            ApplyThemeResources();
+            OnSettingChanged();
+        }
+
+        private void UpdateThemeModeButtons()
+        {
+        }
+
+        private void PopulateThemeTokenEditor()
+        {
+            if (ThemeTokenEditorPanel == null)
+                return;
+
+            _isUpdatingThemeEditor = true;
+            _themeTokenTextBoxes.Clear();
+            _themeTokenSwatches.Clear();
+            ThemeTokenEditorPanel.Children.Clear();
+
+            foreach (var token in ThemeTokenDefinitions)
+            {
+                var row = new Grid
+                {
+                    ColumnDefinitions = new ColumnDefinitions("112,40,*"),
+                    ColumnSpacing = 8,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+
+                var label = new TextBlock
+                {
+                    Text = token.Label,
+                    Foreground = FindThemeBrush("TextSecondary"),
+                    FontSize = 12,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                Grid.SetColumn(label, 0);
+
+                var swatch = new Button
+                {
+                    Width = 34,
+                    Height = 30,
+                    Padding = new Thickness(0),
+                    Background = CreateBrush(GetThemeTokenValue(token.Key)),
+                    BorderBrush = FindThemeBrush("Border"),
+                    BorderThickness = new Thickness(1),
+                    Tag = token.Key
+                };
+                swatch.Click += async (_, _) => await ShowCustomColorPicker(tokenName: token.Key);
+                Grid.SetColumn(swatch, 1);
+
+                var input = new TextBox
+                {
+                    Text = GetThemeTokenValue(token.Key),
+                    Foreground = FindThemeBrush("TextPrimary"),
+                    Background = FindThemeBrush("InputBackground"),
+                    BorderBrush = FindThemeBrush("Border"),
+                    BorderThickness = new Thickness(1),
+                    Padding = new Thickness(8, 5),
+                    CornerRadius = new CornerRadius(_settings.Theme.Layout.ControlRadius),
+                    FontSize = 12,
+                    Tag = token.Key
+                };
+                input.TextChanged += ThemeTokenTextBox_TextChanged;
+                input.LostFocus += ThemeTokenTextBox_LostFocus;
+                Grid.SetColumn(input, 2);
+
+                _themeTokenSwatches[token.Key] = swatch;
+                _themeTokenTextBoxes[token.Key] = input;
+
+                row.Children.Add(label);
+                row.Children.Add(swatch);
+                row.Children.Add(input);
+                ThemeTokenEditorPanel.Children.Add(row);
+            }
+
+            _isUpdatingThemeEditor = false;
+        }
+
+        private void ThemeTokenTextBox_TextChanged(object? sender, TextChangedEventArgs e)
+        {
+            if (_isUpdatingThemeEditor || sender is not TextBox textBox || textBox.Tag is not string tokenName)
+                return;
+
+            var value = NormalizeThemeHex(textBox.Text);
+            if (!IsValidThemeHex(value))
+            {
+                textBox.BorderBrush = Brushes.IndianRed;
+                return;
+            }
+
+            textBox.BorderBrush = FindThemeBrush("Border");
+            SetThemeTokenValue(tokenName, value);
+        }
+
+        private void ThemeTokenTextBox_LostFocus(object? sender, RoutedEventArgs e)
+        {
+            if (sender is not TextBox textBox || textBox.Tag is not string tokenName)
+                return;
+
+            var value = NormalizeThemeHex(textBox.Text);
+            if (!IsValidThemeHex(value))
+            {
+                textBox.Text = GetThemeTokenValue(tokenName);
+                textBox.BorderBrush = FindThemeBrush("Border");
+            }
+        }
+
+        private void SetThemeTokenValue(string tokenName, string value)
+        {
+            value = NormalizeThemeHex(value);
+            if (!IsValidThemeHex(value))
+                return;
+
+            var tokens = _settings.Theme.Tokens;
+            switch (tokenName)
+            {
+                case "BackgroundBase": tokens.BackgroundBase = value; break;
+                case "SidebarBackground": tokens.SidebarBackground = value; break;
+                case "Surface": tokens.Surface = value; break;
+                case "SurfaceAlt": tokens.SurfaceAlt = value; break;
+                case "InputBackground": tokens.InputBackground = value; break;
+                case "Hover": tokens.Hover = value; break;
+                case "Border": tokens.Border = value; break;
+                case "Accent": tokens.Accent = value; break;
+                case "AccentHover": tokens.AccentHover = value; break;
+                case "TextPrimary": tokens.TextPrimary = value; break;
+                case "TextSecondary": tokens.TextSecondary = value; break;
+                case "TextMuted": tokens.TextMuted = value; break;
+                case "StatusInstalled": tokens.StatusInstalled = value; break;
+                case "StatusUpdate": tokens.StatusUpdate = value; break;
+                case "StatusDownload": tokens.StatusDownload = value; break;
+                case "StatusNotInstalled": tokens.StatusNotInstalled = value; break;
+                default: return;
+            }
+
+            _settings.Theme.PresetName = "Custom";
+            _settings.PrimaryColor = tokens.BackgroundBase;
+            _settings.SecondaryColor = tokens.Border;
+            ApplyThemeResources();
+            OnSettingChanged();
+        }
+
+        private string GetThemeTokenValue(string tokenName)
+        {
+            var tokens = _settings.Theme.Tokens;
+            return tokenName switch
+            {
+                "BackgroundBase" => tokens.BackgroundBase,
+                "SidebarBackground" => tokens.SidebarBackground,
+                "Surface" => tokens.Surface,
+                "SurfaceAlt" => tokens.SurfaceAlt,
+                "InputBackground" => tokens.InputBackground,
+                "Hover" => tokens.Hover,
+                "Border" => tokens.Border,
+                "Accent" => tokens.Accent,
+                "AccentHover" => tokens.AccentHover,
+                "TextPrimary" => tokens.TextPrimary,
+                "TextSecondary" => tokens.TextSecondary,
+                "TextMuted" => tokens.TextMuted,
+                "StatusInstalled" => tokens.StatusInstalled,
+                "StatusUpdate" => tokens.StatusUpdate,
+                "StatusDownload" => tokens.StatusDownload,
+                "StatusNotInstalled" => tokens.StatusNotInstalled,
+                _ => "#000000"
+            };
+        }
+
+        private void RefreshThemeEditorSwatches()
+        {
+            foreach (var token in ThemeTokenDefinitions)
+            {
+                var value = GetThemeTokenValue(token.Key);
+                if (_themeTokenSwatches.TryGetValue(token.Key, out var swatch))
+                    swatch.Background = CreateBrush(value);
+
+                if (!_isUpdatingThemeEditor && _themeTokenTextBoxes.TryGetValue(token.Key, out var textBox) && textBox.Text != value)
+                    textBox.Text = value;
+            }
+        }
+
+        private static string NormalizeThemeHex(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            var trimmed = value.Trim();
+            return trimmed.StartsWith("#", StringComparison.Ordinal) ? trimmed : "#" + trimmed;
+        }
+
+        private static bool IsValidThemeHex(string value)
+        {
+            if (value.Length != 7 || value[0] != '#')
+                return false;
+
+            for (var i = 1; i < value.Length; i++)
+            {
+                if (!Uri.IsHexDigit(value[i]))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static SolidColorBrush CreateBrush(string hex)
+        {
+            try
+            {
+                return new SolidColorBrush(Color.Parse(hex));
+            }
+            catch
+            {
+                return new SolidColorBrush(Colors.Transparent);
+            }
+        }
+
+        private void ApplyThemePreset(string presetName)
+        {
+            _settings.Theme = ThemeService.CreatePreset(presetName, _settings.ThemeMode);
+            _settings.ThemeMode = _settings.Theme.Mode;
+            _settings.PrimaryColor = _settings.Theme.Tokens.BackgroundBase;
+            _settings.SecondaryColor = _settings.Theme.Tokens.Border;
+            ApplyThemeResources();
+            UpdateThemeModeButtons();
+            UpdateSettingsUI();
+            OnSettingChanged();
+        }
+
+        private void ThemePresetDark_Click(object sender, RoutedEventArgs e) => ApplyThemePreset("GitHub Dark");
+        private void ThemePresetLight_Click(object sender, RoutedEventArgs e) => ApplyThemePreset("GitHub Light");
+        private void ThemePresetMidnight_Click(object sender, RoutedEventArgs e) => ApplyThemePreset("Midnight Purple");
+        private void ResetTheme_Click(object sender, RoutedEventArgs e) => ApplyThemePreset(_settings.ThemeMode == "Light" ? "GitHub Light" : "GitHub Dark");
+
+        private async void ExportTheme_Click(object sender, RoutedEventArgs e)
+        {
+            var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+            {
+                Title = "Export Theme",
+                SuggestedFileName = "github-launcher-theme.json",
+                FileTypeChoices = new[]
+                {
+                    new FilePickerFileType("JSON Theme") { Patterns = new[] { "*.json" } }
+                }
+            });
+
+            if (file == null)
+                return;
+
+            await using var stream = await file.OpenWriteAsync();
+            await JsonSerializer.SerializeAsync(stream, _settings.Theme, new JsonSerializerOptions { WriteIndented = true });
+        }
+
+        private async void ImportTheme_Click(object sender, RoutedEventArgs e)
+        {
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = "Import Theme",
+                AllowMultiple = false,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("JSON Theme") { Patterns = new[] { "*.json" } }
+                }
+            });
+
+            if (files.Count == 0)
+                return;
+
+            try
+            {
+                await using var stream = await files[0].OpenReadAsync();
+                var importedTheme = await JsonSerializer.DeserializeAsync<ThemeSettings>(stream);
+                if (importedTheme == null)
+                    throw new InvalidOperationException("Theme file is empty.");
+
+                importedTheme.Tokens ??= ThemeTokens.CreateDark();
+                importedTheme.Layout ??= new ThemeLayoutSettings();
+                importedTheme.Tokens.EnsureDefaults();
+                importedTheme.Layout.EnsureDefaults();
+
+                _settings.Theme = importedTheme;
+                _settings.ThemeMode = importedTheme.Mode;
+                _settings.PrimaryColor = importedTheme.Tokens.BackgroundBase;
+                _settings.SecondaryColor = importedTheme.Tokens.Border;
+                ApplyThemeResources();
+                UpdateSettingsUI();
+                OnSettingChanged();
+            }
+            catch (Exception ex)
+            {
+                await ShowMessageBoxAsync($"Failed to import theme: {ex.Message}", "Theme Import Error");
+            }
         }
 
         private double CalculateLuminance(Color color)
@@ -579,14 +1067,16 @@ namespace GithubLauncher
             });
         }
 
-        private async Task ShowCustomColorPicker(bool isSecondary = false)
+        private async Task ShowCustomColorPicker(bool isSecondary = false, string? tokenName = null)
         {
             await Dispatcher.UIThread.InvokeAsync(async () =>
             {
                 if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop &&
                     desktop.MainWindow != null)
                 {
-                    var currentColor = isSecondary ? SecondaryColorBrush.Color : ThemeColorBrush.Color;
+                    var currentColor = !string.IsNullOrWhiteSpace(tokenName)
+                        ? Color.Parse(GetThemeTokenValue(tokenName))
+                        : isSecondary ? SecondaryColorBrush.Color : ThemeColorBrush.Color;
                     var (h, s, l) = RgbToHsl(currentColor);
 
                     var pickerPanel = new StackPanel { Margin = new Thickness(20), Spacing = 15 };
@@ -698,7 +1188,9 @@ namespace GithubLauncher
 
                     var pickerWindow = new Window
                     {
-                        Title = isSecondary ? "Custom Secondary Color" : "Custom Primary Color",
+                        Title = !string.IsNullOrWhiteSpace(tokenName)
+                            ? $"Custom {ThemeTokenDefinitions.FirstOrDefault(t => t.Key == tokenName).Label} Color"
+                            : isSecondary ? "Custom Secondary Color" : "Custom Primary Color",
                         Width = 320,
                         Height = 480,
                         WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -712,14 +1204,21 @@ namespace GithubLauncher
                         var finalColor = HslToRgb(hSlider.slider.Value, sSlider.slider.Value, lSlider.slider.Value);
                         var hexColor = $"#{finalColor.R:X2}{finalColor.G:X2}{finalColor.B:X2}";
 
-                        if (isSecondary)
+                        if (!string.IsNullOrWhiteSpace(tokenName))
+                        {
+                            SetThemeTokenValue(tokenName, hexColor);
+                        }
+                        else if (isSecondary)
                         {
                             _settings.SecondaryColor = hexColor;
+                            _settings.Theme.Tokens.Border = hexColor;
                             SecondaryColorBrush = new SolidColorBrush(finalColor);
                         }
                         else
                         {
                             _settings.PrimaryColor = hexColor;
+                            _settings.Theme.Tokens.BackgroundBase = hexColor;
+                            _settings.Theme.Tokens.Surface = hexColor;
                             ThemeColorBrush = new SolidColorBrush(finalColor);
                         }
                         OnSettingChanged();
@@ -854,7 +1353,16 @@ namespace GithubLauncher
         private void UpdateContinueButtonState()
         {
             ContinueGameInfo = _gameManager.GetLatestPlayedInstalledGame();
+            FeaturedGameInfo = ContinueGameInfo
+                ?? _gameManager.Games.FirstOrDefault(g => g.IsInstalled)
+                ?? _gameManager.Games.FirstOrDefault();
             IsContinueVisible = ContinueGameInfo != null;
+            OnPropertyChanged(nameof(UpdateCount));
+            OnPropertyChanged(nameof(DownloadCount));
+            OnPropertyChanged(nameof(InstalledCount));
+            OnPropertyChanged(nameof(LibraryCount));
+            OnPropertyChanged(nameof(HasUpdates));
+            OnPropertyChanged(nameof(HasDownloads));
         }
 
         private void TopBar_PointerPressed(object? sender, PointerPressedEventArgs e)
@@ -1013,7 +1521,7 @@ namespace GithubLauncher
 
             activityService.FinalizeOrphanSessions();
 
-            foreach (var game in _gameManager.Games)
+            foreach (var game in Games)
             {
                 game.RefreshPlaytime();
             }
@@ -1395,6 +1903,16 @@ namespace GithubLauncher
 
         private Control? FindGameMenuAnchor(GameInfo game)
         {
+            var contextMenuButton = this.GetVisualDescendants()
+                .OfType<Button>()
+                .Where(button => button.ContextMenu != null)
+                .FirstOrDefault(button =>
+                    ReferenceEquals(button.DataContext, game) ||
+                    ReferenceEquals(button.Tag, game));
+
+            if (contextMenuButton != null)
+                return contextMenuButton;
+
             return this.GetVisualDescendants()
                 .OfType<Button>()
                 .FirstOrDefault(button =>
@@ -1480,7 +1998,7 @@ namespace GithubLauncher
                     return;
                 }
 
-                ShowReleaseDownloadSelectionMenu(anchor, game, latestRelease, null, latestRelease.tag_name);
+                ShowReleaseDownloadSelectionMenu(anchor, game, latestRelease, string.Empty, latestRelease.tag_name);
             }
             catch (Exception ex)
             {
@@ -1759,7 +2277,7 @@ namespace GithubLauncher
             OpenContextMenu(anchor, contextMenu);
         }
 
-        private async void SelectDifferentExecutable_Click(object sender, RoutedEventArgs e)
+        private async void SelectDifferentExecutable_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -1834,6 +2352,77 @@ namespace GithubLauncher
             }
         }
 
+        private void FeaturedGameOptionsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button sourceButton || sourceButton.Tag is not GameInfo game)
+                return;
+
+            var menu = new ContextMenu();
+            menu.Items.Add(new MenuItem
+            {
+                Header = game.Name,
+                IsEnabled = false,
+                FontWeight = FontWeight.Bold
+            });
+            menu.Items.Add(new Separator());
+
+            AddGameMenuItem(menu, "Launch", game, LaunchGameMenu_Click, game.CanLaunch);
+            AddGameMenuItem(menu, "Download", game, LaunchGameMenu_Click, game.CanDownload);
+            AddGameMenuItem(menu, "Locate Existing Install", game, LocateExistingInstall_Click, game.CanLocateInstall);
+            AddGameMenuItem(menu, "Update Now", game, UpdateNowMenu_Click, game.CanUpdate);
+            AddGameMenuItem(menu, "Open Folder", game, OpenFolder_Click, game.IsInstalled);
+
+            if (game.CanVersionOptions)
+            {
+                var versionsMenu = new MenuItem { Header = "Versions" };
+                AddGameMenuItem(versionsMenu, "Change Version", game, ChangeVersion_Click, game.CanChangeVersion);
+                AddGameMenuItem(versionsMenu, "Skip Update", game, SkipUpdate_Click, game.CanSkipUpdate);
+                AddGameMenuItem(versionsMenu, "Force Update", game, ForceUpdate_Click, game.IsInstalled);
+                menu.Items.Add(versionsMenu);
+            }
+
+            if (game.CanLaunchOptions)
+            {
+                var launchMenu = new MenuItem { Header = "Launch Options" };
+                AddGameMenuItem(launchMenu, "Select Different Executable", game, SelectDifferentExecutable_Click, game.HasExecutableChoice);
+                AddGameMenuItem(launchMenu, "Create Desktop Shortcut", game, CreateShortcut_Click, game.IsInstalled);
+                AddGameMenuItem(launchMenu, "Add to Steam", game, AddToSteam_Click, game.IsInstalled);
+                menu.Items.Add(launchMenu);
+            }
+
+            var customizeMenu = new MenuItem { Header = "Customize" };
+            AddGameMenuItem(customizeMenu, "Add Custom Image", game, SetCustomIcon_Click);
+            AddGameMenuItem(customizeMenu, "Remove Custom Image", game, RemoveCustomIcon_Click, game.HasCustomIcon);
+            AddGameMenuItem(customizeMenu, "Add Hero Image", game, SetCustomHeroImage_Click);
+            AddGameMenuItem(customizeMenu, "Download Hero Image", game, DownloadCustomHeroImage_Click);
+            AddGameMenuItem(customizeMenu, "Remove Hero Image", game, RemoveCustomHeroImage_Click, game.HasCustomHeroImage);
+            AddGameMenuItem(customizeMenu, "Hide App", game, HideGame_Click);
+            menu.Items.Add(customizeMenu);
+
+            var aboutMenu = new MenuItem { Header = "About" };
+            AddGameMenuItem(aboutMenu, "Show Changelog", game, ShowChangelog_Click, game.CanInfoOptions);
+            AddGameMenuItem(aboutMenu, "Open GitHub Page", game, OpenGitHubPage_Click, game.CanInfoOptions);
+            menu.Items.Add(aboutMenu);
+
+            AddGameMenuItem(menu, "Delete", game, DeleteGameFromLibrary_Click, game.IsInstalled);
+
+            OpenContextMenu(sourceButton, menu);
+        }
+
+        private static void AddGameMenuItem(ItemsControl menu, string header, GameInfo game, EventHandler<RoutedEventArgs> handler, bool isVisible = true)
+        {
+            if (!isVisible)
+                return;
+
+            var item = new MenuItem
+            {
+                Header = header,
+                CommandParameter = game
+            };
+            item.Click += handler;
+            menu.Items.Add(item);
+        }
+
         private async void ContinueButton_Click(object sender, RoutedEventArgs e)
         {
             var latestGame = _gameManager.GetLatestPlayedInstalledGame();
@@ -1854,26 +2443,80 @@ namespace GithubLauncher
             }
         }
 
+        private async void FeaturedGameButton_Click(object sender, RoutedEventArgs e)
+        {
+            var featuredGame = FeaturedGameInfo;
+            if (featuredGame == null)
+            {
+                await ShowMessageBoxAsync("No app found for the featured area.", "No App Found");
+                return;
+            }
+
+            try
+            {
+                await featuredGame.PerformActionAsync(_gameManager.HttpClient, _gameManager.GamesFolder, _settings);
+            }
+            catch (Exception ex)
+            {
+                await ShowMessageBoxAsync($"Failed to run {featuredGame.Name}: {ex.Message}", "Launch Error");
+            }
+        }
+
+        private void HomeButton_Click(object sender, RoutedEventArgs e)
+        {
+            CloseOverlayPanels();
+            HeaderTitleText.Text = "Library";
+            SetActiveNav(ContinueButton);
+        }
+
+        private void CloseOverlayPanels()
+        {
+            isSettingsPanelOpen = false;
+            _isGamesManagerOpen = false;
+            _isActivityOpen = false;
+
+            if (SettingsPanel != null)
+                SettingsPanel.IsVisible = false;
+
+            if (ActivityPanel != null)
+                ActivityPanel.IsVisible = false;
+
+            if (ActivitySessionDetailPanel != null)
+                ActivitySessionDetailPanel.IsVisible = false;
+
+            var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
+            if (manageGamesPanel != null)
+                manageGamesPanel.IsVisible = false;
+
+            if (_isChangelogOpen)
+                CloseChangelog();
+            else if (ChangelogPanel != null)
+                ChangelogPanel.IsVisible = false;
+        }
+
+        private void SetActiveNav(Button? activeButton)
+        {
+            ContinueButton?.Classes.Set("active", activeButton == ContinueButton);
+            ActivityButton?.Classes.Set("active", activeButton == ActivityButton);
+            ManageGamesButton?.Classes.Set("active", activeButton == ManageGamesButton);
+            SettingsButton?.Classes.Set("active", activeButton == SettingsButton);
+        }
+
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            isSettingsPanelOpen = !isSettingsPanelOpen;
-            SettingsPanel.IsVisible = isSettingsPanelOpen;
-
-            if (isSettingsPanelOpen)
+            var shouldOpen = !isSettingsPanelOpen;
+            CloseOverlayPanels();
+            if (!shouldOpen)
             {
-                CloseActivityPanel();
+                HeaderTitleText.Text = "Library";
+                SetActiveNav(ContinueButton);
+                return;
             }
 
-            if (isSettingsPanelOpen)
-            {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    var firstSettingsControl = SettingsContent?.GetVisualDescendants()
-                        .OfType<Control>()
-                        .FirstOrDefault(c => c.IsVisible && c.IsEnabled && c.Focusable);
-                    firstSettingsControl?.Focus();
-                }, DispatcherPriority.Loaded);
-            }
+            isSettingsPanelOpen = true;
+            SettingsPanel.IsVisible = true;
+            HeaderTitleText.Text = "Settings";
+            SetActiveNav(SettingsButton);
         }
 
         private void UpdateSettingsUI()
@@ -1904,6 +2547,24 @@ namespace GithubLauncher
                 if (BackgroundOpacitySlider != null)
                     BackgroundOpacitySlider.Value = _settings.BackgroundOpacity;
 
+                if (ThemeCardRadiusSlider != null)
+                    ThemeCardRadiusSlider.Value = _settings.Theme.Layout.CardRadius;
+
+                if (ThemeControlRadiusSlider != null)
+                    ThemeControlRadiusSlider.Value = _settings.Theme.Layout.ControlRadius;
+
+                if (ThemeSurfaceOpacitySlider != null)
+                    ThemeSurfaceOpacitySlider.Value = _settings.Theme.Layout.SurfaceOpacity;
+
+                if (ThemeSidebarWidthSlider != null)
+                    ThemeSidebarWidthSlider.Value = _settings.Theme.Layout.SidebarWidth;
+
+                if (ThemeMainPaddingSlider != null)
+                    ThemeMainPaddingSlider.Value = _settings.Theme.Layout.MainPadding;
+
+                if (ThemeCardDensitySlider != null)
+                    ThemeCardDensitySlider.Value = _settings.Theme.Layout.CardDensity;
+
                 if (ShowOSTopBarCheckBox != null)
                     ShowOSTopBarCheckBox.IsChecked = _settings.ShowOSTopBar;
 
@@ -1931,8 +2592,7 @@ namespace GithubLauncher
                 if (LinuxWindowsLaunchCommandTextBox != null)
                     LinuxWindowsLaunchCommandTextBox.Text = _settings.LinuxWindowsLaunchCommand;
 
-                if (AppListRepositoryTextBox != null)
-                    AppListRepositoryTextBox.Text = _settings.AppListRepository;
+                RefreshRepositoryListUI();
 
                 if (StartFullscreenCheckBox != null)
                     StartFullscreenCheckBox.IsChecked = _settings.StartFullscreen;
@@ -1959,7 +2619,9 @@ namespace GithubLauncher
                 // Initialize theme
                 ThemeColorBrush = new SolidColorBrush(Color.Parse(_settings?.PrimaryColor ?? "#18181b"));
                 SecondaryColorBrush = new SolidColorBrush(Color.Parse(_settings?.SecondaryColor ?? "#404040"));
-                UpdateThemeColors();
+                ApplyThemeResources();
+                UpdateThemeModeButtons();
+                PopulateThemeTokenEditor();
             }
         }
 
@@ -2168,31 +2830,15 @@ namespace GithubLauncher
 
         private async void CheckforUpdates_Click(object sender, RoutedEventArgs e)
         {
+            if (_isCheckingUpdates)
+                return;
+
             try
             {
-                var button = sender as Button;
-                bool wasEnabled = button?.IsEnabled ?? true;
-                string originalContent = string.Empty;
-
-                if (button != null)
-                {
-                    // Store original content
-                    if (button.Content is StackPanel panel)
-                    {
-                        originalContent = "original_stackpanel";
-                    }
-
-                    button.IsEnabled = false;
-
-                    // Create a temporary text block for status
-                    var statusText = new TextBlock
-                    {
-                        Text = "Checking launcher...",
-                        VerticalAlignment = VerticalAlignment.Center,
-                        HorizontalAlignment = HorizontalAlignment.Center
-                    };
-                    button.Content = statusText;
-                }
+                _isCheckingUpdates = true;
+                UpdateButtonTitle = "Checking...";
+                UpdateButtonSubtitle = "Launcher";
+                _updateSpinTimer.Start();
 
                 // Check for app updates
                 if (_app != null)
@@ -2200,11 +2846,7 @@ namespace GithubLauncher
                     await _app.CheckForAppUpdatesManually();
                 }
 
-                // Update status text
-                if (button?.Content is TextBlock textBlock)
-                {
-                    textBlock.Text = "Checking games...";
-                }
+                UpdateButtonSubtitle = "Games";
 
                 // Check game updates
                 await _gameManager.CheckAllUpdatesAsync();
@@ -2212,81 +2854,20 @@ namespace GithubLauncher
 
                 // Restore original button state
                 _lastUpdateTime = DateTime.Now;
-                if (button != null)
-                {
-                    button.IsEnabled = true;
-
-                    // Restore original content
-                    button.Content = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Children =
-                {
-                    new Image
-                    {
-                        Width = 32,
-                        Height = 32,
-                        Source = new Avalonia.Media.Imaging.Bitmap(
-                            Avalonia.Platform.AssetLoader.Open(
-                                new Uri("avares://GithubLauncher/Assets/CheckForUpdates.png"))),
-                        Margin = new Thickness(0, 0, 12, 0),
-                        VerticalAlignment = VerticalAlignment.Center
-                    },
-                    new StackPanel
-                    {
-                        Orientation = Orientation.Vertical,
-                        VerticalAlignment = VerticalAlignment.Center,
-                        Children =
-                        {
-                            new TextBlock
-                            {
-                                Text = "Up to Date",
-                                FontSize = 12,
-                                FontWeight = FontWeight.Bold
-                            },
-                            new TextBlock
-                            {
-                                Text = GetLastCheckedText(),
-                                FontSize = 11,
-                                Foreground = new SolidColorBrush(Color.Parse("#B8B8B8"))
-                            }
-                        }
-                    }
-                }
-                    };
-                }
+                UpdateButtonTitle = HasUpdates ? "Updates Available" : "Up to Date";
+                UpdateButtonSubtitle = GetLastCheckedText();
             }
             catch (Exception ex)
             {
-                var button = sender as Button;
-                if (button != null)
-                {
-                    button.IsEnabled = true;
-
-                    // Restore original content on error
-                    button.Content = new StackPanel
-                    {
-                        Orientation = Orientation.Horizontal,
-                        Children =
-                {
-                    new Image
-                    {
-                        Width = 32,
-                        Height = 32,
-                        Source = new Avalonia.Media.Imaging.Bitmap(
-                            Avalonia.Platform.AssetLoader.Open(
-                                new Uri("avares://GithubLauncher/Assets/CheckForUpdates.png"))),
-                        Margin = new Thickness(0, 0, 12, 0)
-                    },
-                    new TextBlock
-                    {
-                        Text = "Check for Updates",
-                        VerticalAlignment = VerticalAlignment.Center
-                    }
-                }
-                    };
-                }
+                UpdateButtonTitle = "Check Failed";
+                UpdateButtonSubtitle = GetLastCheckedText();
                 await ShowMessageBoxAsync($"Failed to check for updates: {ex.Message}", "Error");
+            }
+            finally
+            {
+                _isCheckingUpdates = false;
+                _updateSpinTimer.Stop();
+                UpdateIconAngle = 0;
             }
         }
 
@@ -2329,7 +2910,23 @@ namespace GithubLauncher
             }
         }
 
-        private void OpenFolder_Click(object sender, RoutedEventArgs e)
+        private async void DownloadsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var downloadingGame = _gameManager.Games.FirstOrDefault(g => g.IsDownloading);
+            if (downloadingGame == null)
+            {
+                await ShowMessageBoxAsync("No active downloads right now.", "Downloads");
+                return;
+            }
+
+            CloseOverlayPanels();
+            SetActiveNav(ContinueButton);
+            LibrarySearchTextBox.Text = downloadingGame.Name;
+            LibrarySearchTextBox.Focus();
+            RefreshFilteredGames();
+        }
+
+        private void OpenFolder_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -2351,7 +2948,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void ForceUpdate_Click(object sender, RoutedEventArgs e)
+        private async void ForceUpdate_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -2400,7 +2997,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void LaunchGameMenu_Click(object sender, RoutedEventArgs e)
+        private async void LaunchGameMenu_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -2421,7 +3018,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void LocateExistingInstall_Click(object sender, RoutedEventArgs e)
+        private async void LocateExistingInstall_Click(object? sender, RoutedEventArgs e)
         {
             if (sender is not MenuItem menuItem || menuItem.CommandParameter is not GameInfo game)
             {
@@ -2462,7 +3059,7 @@ namespace GithubLauncher
             UpdateContinueButtonState();
         }
 
-        private async void UpdateNowMenu_Click(object sender, RoutedEventArgs e)
+        private async void UpdateNowMenu_Click(object? sender, RoutedEventArgs e)
         {
             if (sender is not MenuItem menuItem || menuItem.CommandParameter is not GameInfo game)
             {
@@ -2480,7 +3077,7 @@ namespace GithubLauncher
             await HandleUpdateNowAsync(anchor, game);
         }
 
-        private async void SkipUpdate_Click(object sender, RoutedEventArgs e)
+        private async void SkipUpdate_Click(object? sender, RoutedEventArgs e)
         {
             if (sender is not MenuItem menuItem || menuItem.CommandParameter is not GameInfo game)
             {
@@ -2491,7 +3088,7 @@ namespace GithubLauncher
             await HandleSkipUpdateAsync(game);
         }
 
-        private async void ChangeVersion_Click(object sender, RoutedEventArgs e)
+        private async void ChangeVersion_Click(object? sender, RoutedEventArgs e)
         {
             if (sender is not MenuItem menuItem || menuItem.CommandParameter is not GameInfo game)
             {
@@ -2509,7 +3106,7 @@ namespace GithubLauncher
             await HandleChangeVersionAsync(anchor, game);
         }
 
-        private void OpenGitHubPage_Click(object sender, RoutedEventArgs e)
+        private void OpenGitHubPage_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -2529,7 +3126,7 @@ namespace GithubLauncher
             else _ = ShowMessageBoxAsync($"Failed to open GitHub page", "Error");
         }
 
-        private async void SetCustomIcon_Click(object sender, RoutedEventArgs e)
+        private async void SetCustomIcon_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var selectedGame = menuItem?.CommandParameter as GameInfo;
@@ -2587,7 +3184,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void RemoveCustomIcon_Click(object sender, RoutedEventArgs e)
+        private async void RemoveCustomIcon_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var selectedGame = menuItem?.CommandParameter as GameInfo;
@@ -2617,7 +3214,247 @@ namespace GithubLauncher
             }
         }
 
-        private async void DeleteGameFromLibrary_Click(object sender, RoutedEventArgs e)
+        private async void SetCustomHeroImage_Click(object? sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            var selectedGame = menuItem?.CommandParameter as GameInfo;
+            if (selectedGame == null)
+            {
+                _ = ShowMessageBoxAsync("Unable to identify the selected app.", "Error");
+                return;
+            }
+
+            bool hasExistingHero = !string.IsNullOrEmpty(selectedGame.CustomHeroImagePath);
+            if (hasExistingHero)
+            {
+                var confirmResult = await ShowMessageBoxAsync($"Replace the existing hero image for {selectedGame.Name}?", "Confirm Hero Replacement", true);
+                if (!confirmResult)
+                    return;
+            }
+
+            var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+            {
+                Title = $"Select Hero Image for {selectedGame.Name}",
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("Image Files")
+                    {
+                        Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.webp", "*.bmp", "*.gif" }
+                    },
+                    new FilePickerFileType("PNG Files") { Patterns = new[] { "*.png" } },
+                    new FilePickerFileType("JPEG Files") { Patterns = new[] { "*.jpg", "*.jpeg" } },
+                    new FilePickerFileType("WebP Files") { Patterns = new[] { "*.webp" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                },
+                AllowMultiple = false
+            });
+
+            if (files?.Count > 0)
+            {
+                try
+                {
+                    selectedGame.SetCustomHeroImage(files[0].Path.LocalPath, _gameManager.CacheFolder);
+                    OnPropertyChanged(nameof(FeaturedGameInfo));
+                }
+                catch (Exception ex)
+                {
+                    _ = ShowMessageBoxAsync($"Failed to set hero image: {ex.Message}", "Error");
+                }
+            }
+        }
+
+        private async void RemoveCustomHeroImage_Click(object? sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            var selectedGame = menuItem?.CommandParameter as GameInfo;
+            if (selectedGame == null)
+            {
+                _ = ShowMessageBoxAsync("Unable to identify the selected app.", "Error");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(selectedGame.CustomHeroImagePath))
+            {
+                _ = ShowMessageBoxAsync($"{selectedGame.Name} is already using the default hero image.", "No Custom Hero");
+                return;
+            }
+
+            var result = await ShowMessageBoxAsync($"Remove hero image for {selectedGame.Name}?", "Confirm Removal", true);
+            if (result)
+            {
+                try
+                {
+                    selectedGame.RemoveCustomHeroImage();
+                    OnPropertyChanged(nameof(FeaturedGameInfo));
+                }
+                catch (Exception ex)
+                {
+                    _ = ShowMessageBoxAsync($"Failed to remove hero image: {ex.Message}", "Error");
+                }
+            }
+        }
+
+        private async void DownloadCustomHeroImage_Click(object? sender, RoutedEventArgs e)
+        {
+            var menuItem = sender as MenuItem;
+            var selectedGame = menuItem?.CommandParameter as GameInfo;
+            if (selectedGame == null)
+            {
+                _ = ShowMessageBoxAsync("Unable to identify the selected app.", "Error");
+                return;
+            }
+
+            var dialogResult = await ShowInputDialogAsync(
+                $"Download Hero Image for {selectedGame.Name}",
+                "Enter direct image URL to download (e.g. from Google or SteamGridDB):"
+            );
+
+            if (dialogResult == null) // Canceled
+                return;
+
+            string url = dialogResult.Trim();
+            if (string.IsNullOrEmpty(url))
+            {
+                _ = ShowMessageBoxAsync("Please enter a valid image URL.", "Invalid URL");
+                return;
+            }
+
+            try
+            {
+                using var client = new HttpClient();
+                client.Timeout = TimeSpan.FromSeconds(25);
+                client.DefaultRequestHeaders.Add("User-Agent", "Github-Launcher/1.0");
+
+                var response = await client.GetAsync(url);
+                response.EnsureSuccessStatusCode();
+
+                var contentType = response.Content.Headers.ContentType?.MediaType;
+                string extension = ".jpg"; // default fallback
+                if (contentType != null)
+                {
+                    if (contentType.Contains("png")) extension = ".png";
+                    else if (contentType.Contains("gif")) extension = ".gif";
+                    else if (contentType.Contains("webp")) extension = ".webp";
+                    else if (contentType.Contains("bmp")) extension = ".bmp";
+                }
+                else
+                {
+                    try
+                    {
+                        var uri = new Uri(url);
+                        var path = uri.AbsolutePath;
+                        var ext = System.IO.Path.GetExtension(path);
+                        if (!string.IsNullOrEmpty(ext))
+                        {
+                            extension = ext;
+                        }
+                    }
+                    catch {}
+                }
+
+                var tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"{System.Guid.NewGuid()}{extension}");
+                using (var fs = new System.IO.FileStream(tempFile, System.IO.FileMode.Create, System.IO.FileAccess.Write, System.IO.FileShare.None))
+                {
+                    await response.Content.CopyToAsync(fs);
+                }
+
+                selectedGame.SetCustomHeroImage(tempFile, _gameManager.CacheFolder);
+                OnPropertyChanged(nameof(FeaturedGameInfo));
+
+                try
+                {
+                    if (System.IO.File.Exists(tempFile))
+                        System.IO.File.Delete(tempFile);
+                }
+                catch {}
+
+                _ = ShowMessageBoxAsync($"Hero image downloaded and updated successfully for {selectedGame.Name}!", "Success");
+            }
+            catch (Exception ex)
+            {
+                _ = ShowMessageBoxAsync($"Failed to download hero image: {ex.Message}", "Error");
+            }
+        }
+
+        private async Task<string?> ShowInputDialogAsync(string title, string message, string defaultText = "")
+        {
+            return await Dispatcher.UIThread.InvokeAsync(async () =>
+            {
+                if (Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop &&
+                    desktop.MainWindow != null)
+                {
+                    string? result = null;
+                    var textBox = new TextBox
+                    {
+                        Text = defaultText,
+                        Width = 360,
+                        Margin = new Thickness(0, 0, 0, 20),
+                        Watermark = "https://example.com/image.png"
+                    };
+
+                    var okButton = new Button
+                    {
+                        Content = "OK",
+                        Margin = new Thickness(0, 0, 10, 0),
+                        MinWidth = 80
+                    };
+
+                    var cancelButton = new Button
+                    {
+                        Content = "Cancel",
+                        MinWidth = 80
+                    };
+
+                    var dialog = new Window
+                    {
+                        Title = title,
+                        Width = 400,
+                        Height = 180,
+                        WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                        Content = new StackPanel
+                        {
+                            Margin = new Thickness(20),
+                            Children =
+                            {
+                                new TextBlock
+                                {
+                                    Text = message,
+                                    TextWrapping = TextWrapping.Wrap,
+                                    Margin = new Thickness(0, 0, 0, 10)
+                                },
+                                textBox,
+                                new StackPanel
+                                {
+                                    Orientation = Orientation.Horizontal,
+                                    HorizontalAlignment = HorizontalAlignment.Center,
+                                    Children = { okButton, cancelButton }
+                                }
+                            }
+                        }
+                    };
+
+                    okButton.Click += (s, e) =>
+                    {
+                        result = textBox.Text ?? "";
+                        dialog.Close();
+                    };
+
+                    cancelButton.Click += (s, e) =>
+                    {
+                        result = null;
+                        dialog.Close();
+                    };
+
+                    dialog.Opened += (s, e) => textBox.Focus();
+
+                    await dialog.ShowDialog(desktop.MainWindow);
+                    return result;
+                }
+                return null;
+            });
+        }
+
+        private async void DeleteGameFromLibrary_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -2806,6 +3643,30 @@ namespace GithubLauncher
             if (_showUpdatesOnlyFilter)
                 source = source.Where(g => g.Status == GameStatus.UpdateAvailable);
 
+            if (ActiveCategoryFilter == "N64")
+                source = source.Where(g => GetGameCategory(g).Contains("N64", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "GamecubeWii")
+                source = source.Where(g => GetGameCategory(g).Contains("Gamecube", StringComparison.OrdinalIgnoreCase) || GetGameCategory(g).Contains("Wii", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "PlayStation")
+                source = source.Where(g => GetGameCategory(g).Contains("PlayStation", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "2DGame")
+                source = source.Where(g => GetGameCategory(g).Contains("2D Game", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "Xbox360")
+                source = source.Where(g => GetGameCategory(g).Contains("Xbox 360", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "SystemEmulation")
+                source = source.Where(g => GetGameCategory(g).Contains("System Emulation", StringComparison.OrdinalIgnoreCase));
+            else if (ActiveCategoryFilter == "OtherPorts")
+                source = source.Where(g => {
+                    var cat = GetGameCategory(g);
+                    return !cat.Contains("N64", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("Gamecube", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("Wii", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("PlayStation", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("2D Game", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("Xbox 360", StringComparison.OrdinalIgnoreCase) && 
+                           !cat.Contains("System Emulation", StringComparison.OrdinalIgnoreCase);
+                });
+
             var filtered = source.ToList();
 
             FilteredGames.Clear();
@@ -2815,16 +3676,46 @@ namespace GithubLauncher
             var noResultsText = this.FindControl<TextBlock>("LibraryNoResultsText");
             if (noResultsText != null)
             {
-                bool hasActiveFilter = !string.IsNullOrEmpty(query) || _showUpdatesOnlyFilter;
+                bool hasActiveFilter = !string.IsNullOrEmpty(query) || _showUpdatesOnlyFilter || ActiveCategoryFilter != "All";
                 bool hasAnyGames = (_gameManager?.Games.Count ?? 0) > 0;
                 noResultsText.IsVisible = hasActiveFilter && hasAnyGames && filtered.Count == 0;
             }
+
+            OnPropertyChanged(nameof(UpdateCount));
+            OnPropertyChanged(nameof(DownloadCount));
+            OnPropertyChanged(nameof(InstalledCount));
+            OnPropertyChanged(nameof(LibraryCount));
+            OnPropertyChanged(nameof(N64PortsCount));
+            OnPropertyChanged(nameof(GamecubeWiiCount));
+            OnPropertyChanged(nameof(PlayStationCount));
+            OnPropertyChanged(nameof(TwoDGamePortsCount));
+            OnPropertyChanged(nameof(Xbox360Count));
+            OnPropertyChanged(nameof(SystemEmulationCount));
+            OnPropertyChanged(nameof(OtherPortsCount));
+            OnPropertyChanged(nameof(HasUpdates));
+            OnPropertyChanged(nameof(HasDownloads));
         }
 
         private void LibrarySearchTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             _librarySearchQuery = (sender as TextBox)?.Text ?? string.Empty;
             RefreshFilteredGames();
+        }
+
+        private void CategoryFilterCard_Click(object? sender, RoutedEventArgs e)
+        {
+            if (sender is Button button && button.CommandParameter is string category)
+            {
+                if (ActiveCategoryFilter == category)
+                {
+                    ActiveCategoryFilter = "All";
+                }
+                else
+                {
+                    ActiveCategoryFilter = category;
+                }
+                RefreshFilteredGames();
+            }
         }
 
         private void ShowUpdatesOnlyCheckBox_Checked(object sender, RoutedEventArgs e)
@@ -2937,7 +3828,7 @@ namespace GithubLauncher
             return DateTime.MinValue;
         }
 
-        private async void HideGame_Click(object sender, RoutedEventArgs e)
+        private async void HideGame_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -3199,24 +4090,96 @@ namespace GithubLauncher
             }
         }
 
-        private void AppListRepositoryTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        private void RefreshRepositoryListUI()
         {
-            if (sender is TextBox textBox && _settings != null)
+            var panel = this.FindControl<StackPanel>("RepositoryListPanel");
+            if (panel == null || _settings == null) return;
+
+            _settings.AppListRepositories ??= new List<string> { "SirDiabo/GHLAppList" };
+            if (_settings.AppListRepositories.Count == 0)
+                _settings.AppListRepositories.Add("SirDiabo/GHLAppList");
+
+            panel.Children.Clear();
+            var repos = _settings.AppListRepositories;
+
+            for (int i = 0; i < repos.Count; i++)
             {
-                _settings.AppListRepository = textBox.Text?.Trim() ?? "SirDiabo/GHLAppList";
-                OnSettingChanged();
+                int index = i;
+
+                var textBox = new Avalonia.Controls.TextBox
+                {
+                    Text = repos[index],
+                    Padding = new Avalonia.Thickness(12, 10),
+                    BorderThickness = new Avalonia.Thickness(1),
+                    CornerRadius = new Avalonia.CornerRadius(4),
+                    Watermark = "owner/repository",
+                };
+                textBox.Bind(Avalonia.Controls.TextBox.ForegroundProperty, textBox.GetResourceObservable("TextPrimary"));
+                textBox.Bind(Avalonia.Controls.TextBox.BackgroundProperty, textBox.GetResourceObservable("Surface"));
+                textBox.Bind(Avalonia.Controls.TextBox.BorderBrushProperty, textBox.GetResourceObservable("Border"));
+
+                textBox.TextChanged += (s, e) =>
+                {
+                    if (_settings?.AppListRepositories != null && index < _settings.AppListRepositories.Count)
+                    {
+                        _settings.AppListRepositories[index] = textBox.Text?.Trim() ?? string.Empty;
+                        OnSettingChanged();
+                    }
+                };
+
+                var removeButton = new Avalonia.Controls.Button
+                {
+                    Content = "✕",
+                    Margin = new Avalonia.Thickness(6, 0, 0, 0),
+                    Padding = new Avalonia.Thickness(10, 10),
+                    VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
+                    BorderThickness = new Avalonia.Thickness(1),
+                    CornerRadius = new Avalonia.CornerRadius(4),
+                    IsEnabled = repos.Count > 1,
+                };
+                removeButton.Bind(Avalonia.Controls.Button.BackgroundProperty, removeButton.GetResourceObservable("Surface"));
+                removeButton.Bind(Avalonia.Controls.Button.ForegroundProperty, removeButton.GetResourceObservable("TextSecondary"));
+                removeButton.Bind(Avalonia.Controls.Button.BorderBrushProperty, removeButton.GetResourceObservable("Border"));
+
+                removeButton.Click += (s, e) =>
+                {
+                    if (_settings?.AppListRepositories != null && index < _settings.AppListRepositories.Count)
+                    {
+                        _settings.AppListRepositories.RemoveAt(index);
+                        if (_settings.AppListRepositories.Count == 0)
+                            _settings.AppListRepositories.Add("SirDiabo/GHLAppList");
+                        OnSettingChanged();
+                        RefreshRepositoryListUI();
+                    }
+                };
+
+                var row = new Avalonia.Controls.Grid
+                {
+                    ColumnDefinitions = new Avalonia.Controls.ColumnDefinitions("*,Auto"),
+                };
+                Avalonia.Controls.Grid.SetColumn(textBox, 0);
+                Avalonia.Controls.Grid.SetColumn(removeButton, 1);
+                row.Children.Add(textBox);
+                row.Children.Add(removeButton);
+                panel.Children.Add(row);
             }
+        }
+
+        private void AddRepositoryButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings == null) return;
+            _settings.AppListRepositories ??= new List<string>();
+            _settings.AppListRepositories.Add(string.Empty);
+            OnSettingChanged();
+            RefreshRepositoryListUI();
         }
 
         private void ResetAppListRepository_Click(object sender, RoutedEventArgs e)
         {
-            if (_settings != null)
-            {
-                _settings.AppListRepository = "SirDiabo/GHLAppList";
-                if (AppListRepositoryTextBox != null)
-                    AppListRepositoryTextBox.Text = "SirDiabo/GHLAppList";
-                OnSettingChanged();
-            }
+            if (_settings == null) return;
+            _settings.AppListRepositories = new List<string> { "SirDiabo/GHLAppList" };
+            OnSettingChanged();
+            RefreshRepositoryListUI();
         }
 
         private async void ClearGamePath_Click(object sender, RoutedEventArgs e)
@@ -3341,6 +4304,48 @@ namespace GithubLauncher
                 _settings.BackgroundOpacity = BackgroundOpacity;
                 AppSettings.Save(_settings);
             }
+        }
+
+        private void ThemeCardRadiusSlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.CardRadius = e.NewValue);
+        }
+
+        private void ThemeControlRadiusSlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.ControlRadius = e.NewValue);
+        }
+
+        private void ThemeSurfaceOpacitySlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.SurfaceOpacity = e.NewValue);
+        }
+
+        private void ThemeSidebarWidthSlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.SidebarWidth = e.NewValue);
+        }
+
+        private void ThemeMainPaddingSlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.MainPadding = e.NewValue);
+        }
+
+        private void ThemeCardDensitySlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
+        {
+            UpdateThemeLayout(layout => layout.CardDensity = e.NewValue);
+        }
+
+        private void UpdateThemeLayout(Action<ThemeLayoutSettings> update)
+        {
+            if (_settings?.Theme?.Layout == null)
+                return;
+
+            update(_settings.Theme.Layout);
+            _settings.Theme.Layout.EnsureDefaults();
+            _settings.Theme.PresetName = "Custom";
+            ApplyThemeResources();
+            OnSettingChanged();
         }
 
         private async void SelectLauncherMusic_Click(object sender, RoutedEventArgs e)
@@ -3474,6 +4479,7 @@ namespace GithubLauncher
                     FolderName = SelectedGame.FolderName,
                     InstallPath = SelectedGame.InstallPath,
                     GameIconUrl = SelectedGame.GameIconUrl,
+                    HeroImageUrl = SelectedGame.HeroImageUrl,
                     IsCustom = true,
                     IsExperimental = false,
                     GameManager = _gameManager
@@ -3523,6 +4529,7 @@ namespace GithubLauncher
                 appToUpdate.FolderName = SelectedGame.FolderName;
                 appToUpdate.InstallPath = SelectedGame.InstallPath;
                 appToUpdate.GameIconUrl = SelectedGame.GameIconUrl;
+                appToUpdate.HeroImageUrl = SelectedGame.HeroImageUrl;
                 await SaveGamesToJsonAsync(gamesData);
 
                 // Refresh the main game list and manager
@@ -3585,6 +4592,7 @@ namespace GithubLauncher
                 FolderName = game.FolderName,
                 InstallPath = game.InstallPath,
                 GameIconUrl = game.GameIconUrl,
+                HeroImageUrl = game.HeroImageUrl,
                 IsCustom = game.IsCustom,
                 IsExperimental = game.IsExperimental
             };
@@ -3651,7 +4659,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void ValidateGames_Click(object sender, RoutedEventArgs e)
+        private async void ValidateGames_Click(object? sender, RoutedEventArgs? e)
         {
             try
             {
@@ -3727,12 +4735,18 @@ namespace GithubLauncher
                     FolderName = element.TryGetProperty("folderName", out var f) ? f.GetString() ?? "" : "",
                     InstallPath = element.TryGetProperty("installPath", out var installPath) ? installPath.GetString() : null,
                     GameIconUrl = GetConfiguredIconUrl(element),
+                    HeroImageUrl = GetConfiguredHeroImageUrl(element),
                     PreferredVersion = element.TryGetProperty("preferredVersion", out var preferredVersion) ? preferredVersion.GetString() : null,
                     SkippedUpdateVersion = element.TryGetProperty("skippedUpdateVersion", out var skippedUpdateVersion) ? skippedUpdateVersion.GetString() : null,
                     IsExperimental = false,
                     IsCustom = true,
                     GameManager = _gameManager
                 };
+                if (_gameManager != null)
+                {
+                    app.LoadCustomIcon(_gameManager.CacheFolder);
+                    app.LoadCustomHeroImage(_gameManager.CacheFolder);
+                }
                 apps.Add(app);
             }
             return apps;
@@ -3747,6 +4761,17 @@ namespace GithubLauncher
             return null;
         }
 
+        private static string? GetConfiguredHeroImageUrl(JsonElement element)
+        {
+            if (element.TryGetProperty("appHeroImageUrl", out var appHeroImageUrl) && appHeroImageUrl.ValueKind != JsonValueKind.Null)
+                return appHeroImageUrl.GetString();
+            if (element.TryGetProperty("heroImageUrl", out var heroImageUrl) && heroImageUrl.ValueKind != JsonValueKind.Null)
+                return heroImageUrl.GetString();
+            if (element.TryGetProperty("bannerImageUrl", out var bannerImageUrl) && bannerImageUrl.ValueKind != JsonValueKind.Null)
+                return bannerImageUrl.GetString();
+            return null;
+        }
+
         private static object SerializeGame(GameInfo game)
         {
             return new
@@ -3756,6 +4781,7 @@ namespace GithubLauncher
                 folderName = game.FolderName,
                 installPath = game.InstallPath,
                 appIconUrl = game.GameIconUrl,
+                appHeroImageUrl = game.HeroImageUrl,
                 preferredVersion = game.PreferredVersion,
                 skippedUpdateVersion = game.SkippedUpdateVersion
             };
@@ -3944,17 +4970,14 @@ namespace GithubLauncher
 
         private void ManageGamesButton_Click(object sender, RoutedEventArgs e)
         {
-
-            if (_isGamesManagerOpen)
+            var shouldOpen = !_isGamesManagerOpen;
+            CloseOverlayPanels();
+            if (!shouldOpen)
             {
-                CloseManageGames_Click(sender, e);
+                HeaderTitleText.Text = "Library";
+                SetActiveNav(ContinueButton);
                 return;
             }
-
-            // Hide other panels
-            SettingsPanel.IsVisible = false;
-            ChangelogPanel.IsVisible = false;
-            CloseActivityPanel();
 
             // Show Manage Apps panel
             _isGamesManagerOpen = true;
@@ -3966,6 +4989,7 @@ namespace GithubLauncher
 
             // Update header text
             HeaderTitleText.Text = "Manage Apps";
+            SetActiveNav(ManageGamesButton);
 
             // Initialize tabs
             SwitchToManageGamesTab(null, null);
@@ -3976,25 +5000,19 @@ namespace GithubLauncher
 
         private void ActivityButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_isActivityOpen)
+            var shouldOpen = !_isActivityOpen;
+            CloseOverlayPanels();
+            if (!shouldOpen)
             {
-                CloseActivityPanel();
+                HeaderTitleText.Text = "Library";
+                SetActiveNav(ContinueButton);
                 return;
             }
-
-            // Hide other panels
-            SettingsPanel.IsVisible = false;
-            ChangelogPanel.IsVisible = false;
-            var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
-            if (manageGamesPanel != null)
-            {
-                manageGamesPanel.IsVisible = false;
-            }
-            _isGamesManagerOpen = false;
 
             _isActivityOpen = true;
             ActivityPanel.IsVisible = true;
             HeaderTitleText.Text = "Activity";
+            SetActiveNav(ActivityButton);
             ActivitySessionDetailPanel.IsVisible = false;
 
             UpdateActivityPeriodButtons();
@@ -4005,6 +5023,8 @@ namespace GithubLauncher
         {
             _isActivityOpen = false;
             ActivityPanel.IsVisible = false;
+            ActivitySessionDetailPanel.IsVisible = false;
+            SetActiveNav(ContinueButton);
         }
 
         private void ActivityPeriodDay_Click(object sender, RoutedEventArgs e)
@@ -4090,12 +5110,18 @@ namespace GithubLauncher
 
             var buckets = activityService.GetAggregatedTotals(_activityPeriod, bucketCount);
 
+            var accentColor = GetThemeSKColor("StatusUpdateBrush", new SKColor(255, 149, 0));
+            var textSecondaryColor = GetThemeSKColor("ThemeTextSecondary", new SKColor(184, 184, 184));
+            var borderColor = GetThemeSKColor("ThemeBorder", new SKColor(45, 45, 48));
+
             ActivityChart.Series = new ISeries[]
             {
                 new ColumnSeries<double>
                 {
                     Name = "Playtime (minutes)",
-                    Values = buckets.Select(b => b.TotalSeconds / 60.0).ToArray()
+                    Values = buckets.Select(b => b.TotalSeconds / 60.0).ToArray(),
+                    Fill = new SolidColorPaint(accentColor),
+                    Stroke = null
                 }
             };
 
@@ -4103,7 +5129,9 @@ namespace GithubLauncher
             {
                 new Axis
                 {
-                    Labels = buckets.Select(b => FormatActivityBucketLabel(b.PeriodStart)).ToList()
+                    Labels = buckets.Select(b => FormatActivityBucketLabel(b.PeriodStart)).ToList(),
+                    LabelsPaint = new SolidColorPaint(textSecondaryColor),
+                    SeparatorsPaint = new SolidColorPaint(borderColor)
                 }
             };
 
@@ -4111,9 +5139,22 @@ namespace GithubLauncher
             {
                 new Axis
                 {
-                    Labeler = value => $"{value:0}m"
+                    Labeler = value => $"{value:0}m",
+                    LabelsPaint = new SolidColorPaint(textSecondaryColor),
+                    SeparatorsPaint = new SolidColorPaint(borderColor)
                 }
             };
+        }
+
+        private static SKColor GetThemeSKColor(string resourceKey, SKColor fallback)
+        {
+            if (Application.Current?.TryGetResource(resourceKey, out var resource) == true && resource is ISolidColorBrush solidBrush)
+            {
+                var color = solidBrush.Color;
+                return new SKColor(color.R, color.G, color.B, color.A);
+            }
+
+            return fallback;
         }
 
         private string FormatActivityBucketLabel(DateTime periodStart)
@@ -4179,6 +5220,7 @@ namespace GithubLauncher
                     FolderName = g.FolderName,
                     InstallPath = g.InstallPath,
                     GameIconUrl = g.GameIconUrl,
+                    HeroImageUrl = g.HeroImageUrl,
                     IconUrl = g.IconUrl,
                     IsInstalled = !string.IsNullOrEmpty(g.FolderName) && Directory.Exists(g.GetInstallPath(_gameManager.GamesFolder)),
                     CanRemove = true,
@@ -4205,7 +5247,7 @@ namespace GithubLauncher
             LoadGamesFromJson();
         }
 
-        private void SwitchToManageGamesTab(object sender, RoutedEventArgs e)
+        private void SwitchToManageGamesTab(object? sender, RoutedEventArgs? e)
         {
             var manageGamesTab = this.FindControl<ScrollViewer>("ManageGamesTab");
             var createEditTab = this.FindControl<ScrollViewer>("CreateEditTab");
@@ -4229,7 +5271,7 @@ namespace GithubLauncher
             }
         }
 
-        private void SwitchToCreateEditTab(object sender, RoutedEventArgs e)
+        private void SwitchToCreateEditTab(object? sender, RoutedEventArgs? e)
         {
             var manageGamesTab = this.FindControl<ScrollViewer>("ManageGamesTab");
             var createEditTab = this.FindControl<ScrollViewer>("CreateEditTab");
@@ -4324,6 +5366,7 @@ namespace GithubLauncher
                         Repository = repository,
                         FolderName = folderName,
                         GameIconUrl = iconUrl,
+                        HeroImageUrl = null,
                         IsCustom = true,
                         IsExperimental = false
                     };
@@ -4345,7 +5388,7 @@ namespace GithubLauncher
 
         private void EditGameEntry_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is var gameData)
+            if (sender is Button button && button.Tag is { } gameData)
             {
                 try
                 {
@@ -4433,7 +5476,7 @@ namespace GithubLauncher
 
         private async void RemoveGameEntry_Click(object sender, RoutedEventArgs e)
         {
-            if (sender is Button button && button.Tag is var gameData)
+            if (sender is Button button && button.Tag is { } gameData)
             {
                 try
                 {
@@ -4555,76 +5598,133 @@ namespace GithubLauncher
 
             try
             {
-                string repo = _settings?.AppListRepository ?? "SirDiabo/GHLAppList";
+                var repos = (_settings?.AppListRepositories ?? new List<string> { "SirDiabo/GHLAppList" })
+                    .Select(r => r.Trim())
+                    .Where(r => !string.IsNullOrWhiteSpace(r))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                string latestTag = string.Empty;
-                bool tagCheckFailed = false;
-                try
+                if (repos.Count == 0)
+                    repos = new List<string> { "SirDiabo/GHLAppList" };
+
+                bool anyTagCheckFailed = false;
+
+                // Fetch all latest tags in parallel
+                await Dispatcher.UIThread.InvokeAsync(() =>
+                    statusText.Text = $"Checking {repos.Count} source{(repos.Count > 1 ? "s" : "")} for updates...");
+
+                var tagResults = await Task.WhenAll(repos.Select(async repo =>
                 {
-                    latestTag = await FetchLatestCatalogTagAsync(repo, ct).ConfigureAwait(false);
-                }
-                catch (HttpRequestException ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"FetchLatestCatalogTag failed: {ex.Message}");
-                    tagCheckFailed = true;
-                }
-
-                string cachedVersion = string.Empty;
-                if (File.Exists(AppCatalogVersionPath))
-                    cachedVersion = (await File.ReadAllTextAsync(AppCatalogVersionPath, ct).ConfigureAwait(false)).Trim();
-
-                bool needsDownload = forceRefresh
-                    || !File.Exists(AppCatalogCachePath)
-                    || string.IsNullOrEmpty(cachedVersion)
-                    || cachedVersion != latestTag;
-
-                if (needsDownload && !string.IsNullOrEmpty(latestTag))
-                {
-                    await Dispatcher.UIThread.InvokeAsync(() =>
-                        statusText.Text = $"Downloading catalog {latestTag}...");
-
-                    string catalogJson = await FetchCatalogJsonAsync(repo, latestTag, ct).ConfigureAwait(false);
-                    await File.WriteAllTextAsync(AppCatalogCachePath, catalogJson, ct).ConfigureAwait(false);
-                    await File.WriteAllTextAsync(AppCatalogVersionPath, latestTag, ct).ConfigureAwait(false);
-                    cachedVersion = latestTag;
-
-                    if (_settings != null)
+                    try
                     {
-                        _settings.AppListCachedVersion = latestTag;
-                        OnSettingChanged();
+                        string tag = await FetchLatestCatalogTagAsync(repo, ct).ConfigureAwait(false);
+                        return (repo, tag, failed: false);
                     }
+                    catch (HttpRequestException ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"FetchLatestCatalogTag failed for {repo}: {ex.Message}");
+                        return (repo, tag: string.Empty, failed: true);
+                    }
+                })).ConfigureAwait(false);
+
+                anyTagCheckFailed = tagResults.Any(r => r.failed);
+
+                // For each repo: check per-repo cache, download if stale
+                var allCategories = new List<(string Category, List<CatalogEntry> Entries)>();
+                var displayVersionParts = new List<string>();
+                bool anyCacheAvailable = false;
+
+                foreach (var (repo, latestTag, failed) in tagResults)
+                {
+                    ct.ThrowIfCancellationRequested();
+
+                    string slug = repo.Replace("/", "_").Replace("\\", "_");
+                    string repoCachePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"app_catalog_cache_{slug}.json");
+                    string repoVersionPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"app_catalog_version_{slug}.txt");
+
+                    string cachedVersion = string.Empty;
+                    if (File.Exists(repoVersionPath))
+                        cachedVersion = (await File.ReadAllTextAsync(repoVersionPath, ct).ConfigureAwait(false)).Trim();
+
+                    bool needsDownload = forceRefresh
+                        || !File.Exists(repoCachePath)
+                        || string.IsNullOrEmpty(cachedVersion)
+                        || cachedVersion != latestTag;
+
+                    if (needsDownload && !string.IsNullOrEmpty(latestTag))
+                    {
+                        await Dispatcher.UIThread.InvokeAsync(() =>
+                            statusText.Text = $"Downloading {repo} {latestTag}...");
+
+                        string catalogJson = await FetchCatalogJsonAsync(repo, latestTag, ct).ConfigureAwait(false);
+                        await File.WriteAllTextAsync(repoCachePath, catalogJson, ct).ConfigureAwait(false);
+                        await File.WriteAllTextAsync(repoVersionPath, latestTag, ct).ConfigureAwait(false);
+                        cachedVersion = latestTag;
+
+                        if (_settings != null)
+                        {
+                            _settings.AppListCachedVersion = string.Join("|", tagResults.Select(r => r.tag));
+                            OnSettingChanged();
+                        }
+                    }
+
+                    if (!File.Exists(repoCachePath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"No cache for {repo}, skipping.");
+                        continue;
+                    }
+
+                    anyCacheAvailable = true;
+                    string json = await File.ReadAllTextAsync(repoCachePath, ct).ConfigureAwait(false);
+                    var categories = ParseCatalogJson(json);
+                    allCategories.AddRange(categories);
+
+                    if (!string.IsNullOrEmpty(cachedVersion))
+                        displayVersionParts.Add(failed ? $"{repo}@{cachedVersion}(offline)" : $"{repo}@{cachedVersion}");
                 }
 
-                if (!File.Exists(AppCatalogCachePath))
+                if (!anyCacheAvailable)
                 {
                     await Dispatcher.UIThread.InvokeAsync(() =>
                     {
-                        statusText.Text = tagCheckFailed
+                        statusText.Text = anyTagCheckFailed
                             ? "No internet connection. Could not download the app catalog."
-                            : "Could not retrieve catalog. Check the repository setting and your connection.";
+                            : "Could not retrieve catalog. Check the repository settings and your connection.";
                         statusText.IsVisible = true;
                     });
                     return;
                 }
 
-                string json = await File.ReadAllTextAsync(AppCatalogCachePath, ct).ConfigureAwait(false);
-                var categories = ParseCatalogJson(json);
+                // Merge: deduplicate entries by Repository field across all sources
+                _gameCategoryCache = null;
+                var merged = allCategories
+                    .GroupBy(c => c.Category, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => (
+                        Category: g.Key,
+                        Entries: g.SelectMany(c => c.Entries)
+                                  .GroupBy(e => e.Repository, StringComparer.OrdinalIgnoreCase)
+                                  .Select(eg => eg.First())
+                                  .ToList()
+                    ))
+                    .ToList();
+
+                string displayVersion = string.Join(" | ", displayVersionParts);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     if (versionText != null)
                     {
-                        if (string.IsNullOrEmpty(cachedVersion))
+                        if (string.IsNullOrEmpty(displayVersion))
                             versionText.Text = string.Empty;
-                        else if (tagCheckFailed)
-                            versionText.Text = $"Version: {cachedVersion} (offline, showing cached catalog)";
+                        else if (anyTagCheckFailed)
+                            versionText.Text = $"Version: {displayVersion} (offline, showing cached catalog)";
                         else
-                            versionText.Text = $"Version: {cachedVersion}";
+                            versionText.Text = $"Version: {displayVersion}";
                     }
 
                     statusText.IsVisible = false;
                     catalogContent.IsVisible = true;
-                    RenderCatalogCategories(catalogContent, categories, ct);
+                    RenderCatalogCategories(catalogContent, merged, ct);
                     FilterCatalogCards();
                 });
             }
@@ -4997,7 +6097,7 @@ namespace GithubLauncher
             };
         }
 
-        private async void CatalogAddEntry_Click(object sender, RoutedEventArgs e)
+        private async void CatalogAddEntry_Click(object? sender, RoutedEventArgs e)
         {
             if (sender is not Button button || button.Tag is not CatalogEntry entry)
                 return;
@@ -5021,6 +6121,7 @@ namespace GithubLauncher
                     Repository = entry.Repository,
                     FolderName = entry.FolderName,
                     GameIconUrl = entry.AppIconUrl,
+                    HeroImageUrl = null,
                     IsCustom = true,
                     GameManager = _gameManager,
                 };
@@ -5066,6 +6167,7 @@ namespace GithubLauncher
 
             // Show main content
             HeaderTitleText.Text = "Library";
+            SetActiveNav(ContinueButton);
         }
 
         private void MusicVolumeSlider_ValueChanged(object sender, Avalonia.Controls.Primitives.RangeBaseValueChangedEventArgs e)
@@ -5588,6 +6690,23 @@ namespace GithubLauncher
             // Unsubscribe
             game.GameProcessStarted -= OnGameProcessStarted;
             game.GameProcessStarted += OnGameProcessStarted;
+            game.PropertyChanged -= OnGameInfoPropertyChanged;
+            game.PropertyChanged += OnGameInfoPropertyChanged;
+        }
+
+        private void OnGameInfoPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(GameInfo.Status) ||
+                e.PropertyName == nameof(GameInfo.CanUpdate) ||
+                e.PropertyName == nameof(GameInfo.IsDownloading) ||
+                e.PropertyName == nameof(GameInfo.IsInstalled))
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    RefreshFilteredGames();
+                    UpdateContinueButtonState();
+                });
+            }
         }
 
         private void OnGameProcessStarted(Process? process)
@@ -5715,7 +6834,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void ShowChangelog_Click(object sender, RoutedEventArgs e)
+        private async void ShowChangelog_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -5734,6 +6853,7 @@ namespace GithubLauncher
         {
             try
             {
+                CloseOverlayPanels();
                 _isChangelogOpen = true;
 
                 // Show changelog panel
@@ -5772,7 +6892,7 @@ namespace GithubLauncher
                     changelogContent.ItemsSource = new[] { loadingPanel };
                 }
 
-                string changelogText = await FetchChangelogAsync(game.Repository);
+                string changelogText = await FetchChangelogAsync(game.Repository ?? string.Empty);
 
                 if (changelogContent != null)
                 {
@@ -6268,7 +7388,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void CreateShortcut_Click(object sender, RoutedEventArgs e)
+        private async void CreateShortcut_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -6300,7 +7420,7 @@ namespace GithubLauncher
             }
         }
 
-        private async void AddToSteam_Click(object sender, RoutedEventArgs e)
+        private async void AddToSteam_Click(object? sender, RoutedEventArgs e)
         {
             var menuItem = sender as MenuItem;
             var game = menuItem?.CommandParameter as GameInfo;
@@ -6377,4 +7497,3 @@ namespace GithubLauncher
     }
 
 }
-

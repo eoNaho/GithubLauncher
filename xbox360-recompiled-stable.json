@@ -1,0 +1,22 @@
+{
+  "Xbox 360 Recompiled - Stable Ports": [
+    {
+      "name": "Silent Hill: Downpour Recompiled",
+      "repository": "LittleBitUA/DownpourRecomp",
+      "folderName": "DownpourRecomp",
+      "appIconUrl": "https://cdn2.steamgriddb.com/grid/16c2f163b036939d4178a21ade6283c4.png"
+    },
+    {
+      "name": "Castlevania: Symphony of the Night Recompiled",
+      "repository": "birabittoh/NocturneRecomp",
+      "folderName": "NocturneRecomp",
+      "appIconUrl": "https://cdn2.steamgriddb.com/icon_thumb/c23497bd62a8f8a0981fdc9cbd3c30d9.png"
+    },
+    {
+      "name": "Skate 3 Recompiled",
+      "repository": "mchughalex/skate3recomp",
+      "folderName": "Skate3Recompiled",
+      "appIconUrl": "https://cdn2.steamgriddb.com/icon/dcf0c06522a3c86c78bea8dc47433933.png"
+    }
+  ]
+}

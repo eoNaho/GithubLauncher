@@ -387,11 +387,11 @@ namespace GithubLauncher
                 if (updateResult != 0) return updateResult;
 
                 // Re-check status after update
-                await game.CheckStatusAsync(_gameManager.HttpClient, _gameManager.GamesFolder, forceUpdateCheck: true);
+                await game.CheckStatusAsync(_gameManager!.HttpClient, _gameManager.GamesFolder, forceUpdateCheck: true);
             }
 
             var settings = AppSettings.Load();
-            var gamesFolder = _gameManager.GamesFolder;
+            var gamesFolder = _gameManager!.GamesFolder;
             if (string.IsNullOrEmpty(gamesFolder) || string.IsNullOrEmpty(game.FolderName))
             {
                 return PrintError("App folder is not configured.");
@@ -442,7 +442,7 @@ namespace GithubLauncher
                             // If running the CLI version, try to find the GUI version
                             if (exePath.Contains("CLI", StringComparison.OrdinalIgnoreCase))
                             {
-                                var possibleGuiExe = Path.Combine(exeDir, "GithubLauncher.exe");
+                                var possibleGuiExe = Path.Combine(exeDir ?? string.Empty, "GithubLauncher.exe");
                                 if (File.Exists(possibleGuiExe))
                                 {
                                     guiExe = possibleGuiExe;
@@ -614,7 +614,7 @@ namespace GithubLauncher
                 string initialVersion = game.InstalledVersion ?? "";
 
                 // Get the latest release info
-                await game.CheckStatusAsync(_gameManager.HttpClient, _gameManager.GamesFolder, forceUpdateCheck: true);
+                await game.CheckStatusAsync(_gameManager!.HttpClient, _gameManager.GamesFolder, forceUpdateCheck: true);
 
                 // Get platform identifier
                 string platformIdentifier = GameInfo.GetPlatformIdentifier(settings);
@@ -1193,7 +1193,7 @@ rm -- ""$0""
                     return PrintError("App folder is not configured.");
                 }
 
-                var gamePath = game.GetInstallPath(_gameManager.GamesFolder);
+                var gamePath = game.GetInstallPath(_gameManager!.GamesFolder);
 
                 if (Directory.Exists(gamePath))
                 {
@@ -1261,4 +1261,3 @@ rm -- ""$0""
         }
     }
 }
-

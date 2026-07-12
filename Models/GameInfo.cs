@@ -38,9 +38,74 @@ namespace GithubLauncher.Models
         public string? FolderName { get; set; }
         public string? InstallPath { get; set; }
         public string? GameIconUrl { get; set; }
+        public string? HeroImageUrl { get; set; }
         public bool IsExperimental { get; set; }
         public bool IsCustom { get; set; }
+
+        public bool SupportsWindows
+        {
+            get
+            {
+                if (_cachedRelease?.assets != null && _cachedRelease.assets.Length > 0)
+                {
+                    foreach (var asset in _cachedRelease.assets)
+                    {
+                        if (asset.name != null && (asset.name.Contains("win", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)))
+                            return true;
+                    }
+                    return false;
+                }
+                if (IsInstalled && AvailableExecutables != null && AvailableExecutables.Count > 0)
+                {
+                    return AvailableExecutables.Any(exe => exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase));
+                }
+                return true;
+            }
+        }
+
+        public bool SupportsMac
+        {
+            get
+            {
+                if (_cachedRelease?.assets != null && _cachedRelease.assets.Length > 0)
+                {
+                    foreach (var asset in _cachedRelease.assets)
+                    {
+                        if (asset.name != null && (asset.name.Contains("mac", StringComparison.OrdinalIgnoreCase) || asset.name.Contains("osx", StringComparison.OrdinalIgnoreCase) || asset.name.Contains("darwin", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".dmg", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".app", StringComparison.OrdinalIgnoreCase)))
+                            return true;
+                    }
+                    return false;
+                }
+                if (IsInstalled && AvailableExecutables != null && AvailableExecutables.Count > 0)
+                {
+                    return AvailableExecutables.Any(exe => exe.EndsWith(".app", StringComparison.OrdinalIgnoreCase) || exe.Contains(".app/"));
+                }
+                if (!string.IsNullOrEmpty(Repository) && (Repository.Contains("mac", StringComparison.OrdinalIgnoreCase) || Repository.Contains("osx", StringComparison.OrdinalIgnoreCase) || Repository.Contains("darwin", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+                return false;
+            }
+        }
+
+        public bool SupportsLinux
+        {
+            get
+            {
+                if (_cachedRelease?.assets != null && _cachedRelease.assets.Length > 0)
+                {
+                    foreach (var asset in _cachedRelease.assets)
+                    {
+                        if (asset.name != null && (asset.name.Contains("linux", StringComparison.OrdinalIgnoreCase) || asset.name.Contains("ubuntu", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".appimage", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".deb", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".rpm", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) || asset.name.EndsWith(".tar.xz", StringComparison.OrdinalIgnoreCase)))
+                            return true;
+                    }
+                    return false;
+                }
+                if (!string.IsNullOrEmpty(Repository) && (Repository.Contains("linux", StringComparison.OrdinalIgnoreCase) || Repository.Contains("ubuntu", StringComparison.OrdinalIgnoreCase)))
+                    return true;
+                return false;
+            }
+        }
         private string? _customIconPath { get; set; }
+        private string? _customHeroImagePath { get; set; }
         public string? CustomIconPath
         {
             get => _customIconPath;
@@ -51,12 +116,30 @@ namespace GithubLauncher.Models
                     _customIconPath = value;
                     OnPropertyChanged();
                     OnPropertyChanged(nameof(IconUrl));
+                    OnPropertyChanged(nameof(HeroImageSource));
                     OnPropertyChanged(nameof(HasCustomIcon));
                 }
             }
         }
+
+        public string? CustomHeroImagePath
+        {
+            get => _customHeroImagePath;
+            set
+            {
+                if (_customHeroImagePath != value)
+                {
+                    _customHeroImagePath = value;
+                    OnPropertyChanged();
+                    OnPropertyChanged(nameof(HeroImageSource));
+                    OnPropertyChanged(nameof(HasCustomHeroImage));
+                }
+            }
+        }
+
         private string? _cachedDefaultIconPath;
         public bool HasCustomIcon => !string.IsNullOrEmpty(CustomIconPath) && File.Exists(CustomIconPath);
+        public bool HasCustomHeroImage => !string.IsNullOrEmpty(CustomHeroImagePath) && File.Exists(CustomHeroImagePath);
 
         public string IconUrl
         {
@@ -76,6 +159,20 @@ namespace GithubLauncher.Models
 
                 // Direct URL (will download)
                 return DefaultIconUrl;
+            }
+        }
+
+        public string HeroImageSource
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(CustomHeroImagePath) && File.Exists(CustomHeroImagePath))
+                    return CustomHeroImagePath;
+
+                if (!string.IsNullOrWhiteSpace(HeroImageUrl))
+                    return HeroImageUrl;
+
+                return IconUrl;
             }
         }
 
@@ -401,13 +498,27 @@ namespace GithubLauncher.Models
             {
                 return Status switch
                 {
-                    GameStatus.NotInstalled => new SolidColorBrush(Color.FromRgb(0, 122, 255)),
-                    GameStatus.Installed => new SolidColorBrush(Color.FromRgb(52, 199, 89)),
-                    GameStatus.UpdateAvailable => new SolidColorBrush(Color.FromRgb(255, 149, 0)),
-                    GameStatus.Downloading or GameStatus.Installing => new SolidColorBrush(Color.FromRgb(142, 142, 147)),
-                    _ => new SolidColorBrush(Color.FromRgb(0, 122, 255))
+                    GameStatus.NotInstalled => new SolidColorBrush(GetStatusColor("StatusNotInstalledBrush", Color.FromRgb(0, 122, 255))),
+                    GameStatus.Installed => new SolidColorBrush(GetStatusColor("StatusInstalledBrush", Color.FromRgb(52, 199, 89))),
+                    GameStatus.UpdateAvailable => new SolidColorBrush(GetStatusColor("StatusUpdateBrush", Color.FromRgb(255, 149, 0))),
+                    GameStatus.Downloading or GameStatus.Installing => new SolidColorBrush(GetStatusColor("StatusDownloadingBrush", Color.FromRgb(142, 142, 147))),
+                    _ => new SolidColorBrush(GetStatusColor("StatusNotInstalledBrush", Color.FromRgb(0, 122, 255)))
                 };
             }
+        }
+
+        private static Color GetStatusColor(string resourceKey, Color fallback)
+        {
+            if (Application.Current?.TryGetResource(resourceKey, out var resource) == true && resource is ISolidColorBrush solidBrush)
+                return solidBrush.Color;
+
+            return fallback;
+        }
+
+        public void RefreshThemeColors()
+        {
+            DispatchPropertyChanged(nameof(ButtonColor));
+            DispatchPropertyChanged(nameof(ProgressBarColor));
         }
 
         public string StatusText
@@ -516,22 +627,25 @@ namespace GithubLauncher.Models
         {
             get
             {
+                var installedColor = GetStatusColor("StatusInstalledBrush", Color.FromRgb(52, 199, 89));
+                var progress = DownloadProgress / 100.0;
+
                 if (Status == GameStatus.Updating)
                 {
-                    // Yellow to Green gradient based on progress
-                    var progress = DownloadProgress / 100.0;
-                    byte r = (byte)(255 - (255 - 52) * progress);
-                    byte g = (byte)(149 + (199 - 149) * progress);
-                    byte b = (byte)(0 + (89 - 0) * progress);
+                    // Update accent to Installed color gradient based on progress
+                    var updateColor = GetStatusColor("StatusUpdateBrush", Color.FromRgb(255, 149, 0));
+                    byte r = (byte)(updateColor.R + (installedColor.R - updateColor.R) * progress);
+                    byte g = (byte)(updateColor.G + (installedColor.G - updateColor.G) * progress);
+                    byte b = (byte)(updateColor.B + (installedColor.B - updateColor.B) * progress);
                     return new SolidColorBrush(Color.FromRgb(r, g, b));
                 }
                 else
                 {
-                    // Blue to Green gradient based on progress
-                    var progress = DownloadProgress / 100.0;
-                    byte r = (byte)(0 + (52 - 0) * progress);
-                    byte g = (byte)(122 + (199 - 122) * progress);
-                    byte b = (byte)(255 - (255 - 89) * progress);
+                    // NotInstalled to Installed color gradient based on progress
+                    var notInstalledColor = GetStatusColor("StatusNotInstalledBrush", Color.FromRgb(0, 122, 255));
+                    byte r = (byte)(notInstalledColor.R + (installedColor.R - notInstalledColor.R) * progress);
+                    byte g = (byte)(notInstalledColor.G + (installedColor.G - notInstalledColor.G) * progress);
+                    byte b = (byte)(notInstalledColor.B + (installedColor.B - notInstalledColor.B) * progress);
                     return new SolidColorBrush(Color.FromRgb(r, g, b));
                 }
             }
@@ -666,7 +780,7 @@ namespace GithubLauncher.Models
                     {
                         await CheckLatestVersionAsync(httpClient).ConfigureAwait(false);
                     }
-                    else if (GitHubApiCache.TryGetCachedVersion(Repository, out var cache) && cache != null)
+                    else if (GitHubApiCache.TryGetCachedVersion(Repository ?? string.Empty, out var cache) && cache != null)
                     {
                         // Use cached data
                         LatestVersion = cache.Version;
@@ -680,7 +794,7 @@ namespace GithubLauncher.Models
                     {
                         await CheckLatestVersionAsync(httpClient).ConfigureAwait(false);
                     }
-                    else if (GitHubApiCache.TryGetCachedVersion(Repository, out var cache) && cache != null)
+                    else if (GitHubApiCache.TryGetCachedVersion(Repository ?? string.Empty, out var cache) && cache != null)
                     {
                         // Use cached data
                         LatestVersion = cache.Version;
@@ -933,11 +1047,63 @@ namespace GithubLauncher.Models
 
                 OnPropertyChanged(nameof(CustomIconPath));
                 OnPropertyChanged(nameof(IconUrl));
+                OnPropertyChanged(nameof(HeroImageSource));
                 OnPropertyChanged(nameof(HasCustomIcon));
             }
             catch (Exception ex)
             {
                 throw new Exception($"Failed to set custom icon: {ex.Message}", ex);
+            }
+        }
+
+        public void SetCustomHeroImage(string sourcePath, string cacheDirectory)
+        {
+            if (string.IsNullOrEmpty(sourcePath) || !File.Exists(sourcePath))
+                throw new ArgumentException("Source file does not exist or path is invalid.");
+
+            if (string.IsNullOrEmpty(FolderName))
+                throw new InvalidOperationException("FolderName is required for custom hero image operations.");
+
+            var customHeroDir = Path.Combine(cacheDirectory, "CustomHeroes");
+            Directory.CreateDirectory(customHeroDir);
+
+            var extension = Path.GetExtension(sourcePath);
+            var fileName = $"{FolderName}_hero{extension}";
+            var destinationPath = Path.Combine(customHeroDir, fileName);
+
+            try
+            {
+                if (!string.IsNullOrEmpty(CustomHeroImagePath) && File.Exists(CustomHeroImagePath))
+                {
+                    ClearImageFromMemory();
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+                    TryDeleteFileWithRetry(CustomHeroImagePath, maxRetries: 3, delayMs: 100);
+                }
+
+                using (var sourceStream = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                using (var destStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None))
+                {
+                    sourceStream.CopyTo(destStream);
+                }
+
+                if (File.Exists(destinationPath))
+                {
+                    var attributes = File.GetAttributes(destinationPath);
+                    if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                    {
+                        File.SetAttributes(destinationPath, attributes & ~FileAttributes.ReadOnly);
+                    }
+                }
+
+                CustomHeroImagePath = destinationPath;
+                OnPropertyChanged(nameof(HeroImageSource));
+                OnPropertyChanged(nameof(HasCustomHeroImage));
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed to set custom hero image: {ex.Message}", ex);
             }
         }
 
@@ -954,6 +1120,7 @@ namespace GithubLauncher.Models
 
                 OnPropertyChanged(nameof(CustomIconPath));
                 OnPropertyChanged(nameof(IconUrl));
+                OnPropertyChanged(nameof(HeroImageSource));
                 OnPropertyChanged(nameof(HasCustomIcon));
 
                 ClearImageFromMemory();
@@ -982,6 +1149,40 @@ namespace GithubLauncher.Models
             catch (Exception ex)
             {
                 throw new Exception($"Failed to remove custom icon: {ex.Message}", ex);
+            }
+        }
+
+        public void RemoveCustomHeroImage()
+        {
+            if (string.IsNullOrEmpty(CustomHeroImagePath))
+                return;
+
+            var pathToDelete = CustomHeroImagePath;
+
+            try
+            {
+                CustomHeroImagePath = "";
+                OnPropertyChanged(nameof(HeroImageSource));
+                OnPropertyChanged(nameof(HasCustomHeroImage));
+
+                ClearImageFromMemory();
+
+                Dispatcher.UIThread.InvokeAsync(async () =>
+                {
+                    await Task.Delay(100);
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+
+                    if (File.Exists(pathToDelete))
+                    {
+                        TryDeleteFileWithRetry(pathToDelete, maxRetries: 5, delayMs: 200);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed to remove custom hero image: {ex.Message}", ex);
             }
         }
 
@@ -1015,6 +1216,41 @@ namespace GithubLauncher.Models
                     }
 
                     CustomIconPath = iconPath;
+                    break;
+                }
+            }
+        }
+
+        public void LoadCustomHeroImage(string cacheDirectory)
+        {
+            if (string.IsNullOrEmpty(FolderName))
+                return;
+
+            var customHeroDir = Path.Combine(cacheDirectory, "CustomHeroes");
+            if (!Directory.Exists(customHeroDir))
+                return;
+
+            var possibleExtensions = new[] { ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif" };
+            foreach (var ext in possibleExtensions)
+            {
+                var fileName = $"{FolderName}_hero{ext}";
+                var heroPath = Path.Combine(customHeroDir, fileName);
+                if (File.Exists(heroPath))
+                {
+                    try
+                    {
+                        var attributes = File.GetAttributes(heroPath);
+                        if ((attributes & FileAttributes.ReadOnly) == FileAttributes.ReadOnly)
+                        {
+                            File.SetAttributes(heroPath, attributes & ~FileAttributes.ReadOnly);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to check/modify file attributes for {heroPath}: {ex.Message}");
+                    }
+
+                    CustomHeroImagePath = heroPath;
                     break;
                 }
             }
@@ -1137,6 +1373,7 @@ namespace GithubLauncher.Models
                         {
                             _cachedDefaultIconPath = cachedIconPath;
                             OnPropertyChanged(nameof(IconUrl));
+                            OnPropertyChanged(nameof(HeroImageSource));
                             System.Diagnostics.Debug.WriteLine($"Using cached icon for {Name}: {cachedIconPath}");
                             return;
                         }
@@ -1161,6 +1398,7 @@ namespace GithubLauncher.Models
                 await File.WriteAllBytesAsync(cachedIconPath, iconData);
                 _cachedDefaultIconPath = cachedIconPath;
                 OnPropertyChanged(nameof(IconUrl));
+                OnPropertyChanged(nameof(HeroImageSource));
                 System.Diagnostics.Debug.WriteLine($"Icon cached for {Name}: {cachedIconPath}");
             }
             catch (Exception ex)
@@ -1182,7 +1420,9 @@ namespace GithubLauncher.Models
             Dispatcher.UIThread.InvokeAsync(() =>
             {
                 OnPropertyChanged(nameof(IconUrl));
+                OnPropertyChanged(nameof(HeroImageSource));
                 OnPropertyChanged(nameof(HasCustomIcon));
+                OnPropertyChanged(nameof(HasCustomHeroImage));
             }, DispatcherPriority.Render);
         }
 
@@ -2558,4 +2798,3 @@ namespace GithubLauncher.Models
         }
     }
 }
-
