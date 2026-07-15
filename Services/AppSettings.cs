@@ -36,7 +36,9 @@ namespace GithubLauncher
         public bool EnableGamepadInput { get; set; } = true;
         public string LinuxWindowsLaunchCommand { get; set; } = string.Empty;
         public string AppListRepository { get; set; } = "SirDiabo/GHLAppList"; // legacy — kept for migration only
-        public List<string> AppListRepositories { get; set; } = new List<string> { "SirDiabo/GHLAppList" };
+        public List<string> AppListRepositories { get; set; } = DefaultAppListRepositories();
+
+        public static List<string> DefaultAppListRepositories() => new List<string> { "SirDiabo/GHLAppList", "eoNaho/AppList-custom" };
         public string AppListCachedVersion { get; set; } = string.Empty;
         private static readonly string SettingsPath = Path.Combine(
             AppDomain.CurrentDomain.BaseDirectory,
@@ -76,12 +78,12 @@ namespace GithubLauncher
                     if (!hasReposList)
                     {
                         settings.AppListRepositories = string.IsNullOrWhiteSpace(settings.AppListRepository)
-                            ? new List<string> { "SirDiabo/GHLAppList" }
+                            ? DefaultAppListRepositories()
                             : new List<string> { settings.AppListRepository };
                     }
                     else if (settings.AppListRepositories == null || settings.AppListRepositories.Count == 0)
                     {
-                        settings.AppListRepositories = new List<string> { "SirDiabo/GHLAppList" };
+                        settings.AppListRepositories = DefaultAppListRepositories();
                     }
 
                     return settings;

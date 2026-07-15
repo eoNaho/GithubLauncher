@@ -4105,9 +4105,9 @@ namespace GithubLauncher
             var panel = this.FindControl<StackPanel>("RepositoryListPanel");
             if (panel == null || _settings == null) return;
 
-            _settings.AppListRepositories ??= new List<string> { "SirDiabo/GHLAppList" };
+            _settings.AppListRepositories ??= AppSettings.DefaultAppListRepositories();
             if (_settings.AppListRepositories.Count == 0)
-                _settings.AppListRepositories.Add("SirDiabo/GHLAppList");
+                _settings.AppListRepositories.AddRange(AppSettings.DefaultAppListRepositories());
 
             panel.Children.Clear();
             var repos = _settings.AppListRepositories;
@@ -4157,7 +4157,7 @@ namespace GithubLauncher
                     {
                         _settings.AppListRepositories.RemoveAt(index);
                         if (_settings.AppListRepositories.Count == 0)
-                            _settings.AppListRepositories.Add("SirDiabo/GHLAppList");
+                            _settings.AppListRepositories.AddRange(AppSettings.DefaultAppListRepositories());
                         OnSettingChanged();
                         RefreshRepositoryListUI();
                     }
@@ -4187,7 +4187,7 @@ namespace GithubLauncher
         private void ResetAppListRepository_Click(object sender, RoutedEventArgs e)
         {
             if (_settings == null) return;
-            _settings.AppListRepositories = new List<string> { "SirDiabo/GHLAppList" };
+            _settings.AppListRepositories = AppSettings.DefaultAppListRepositories();
             OnSettingChanged();
             RefreshRepositoryListUI();
         }
@@ -5612,14 +5612,14 @@ namespace GithubLauncher
 
             try
             {
-                var repos = (_settings?.AppListRepositories ?? new List<string> { "SirDiabo/GHLAppList" })
+                var repos = (_settings?.AppListRepositories ?? AppSettings.DefaultAppListRepositories())
                     .Select(r => r.Trim())
                     .Where(r => !string.IsNullOrWhiteSpace(r))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 if (repos.Count == 0)
-                    repos = new List<string> { "SirDiabo/GHLAppList" };
+                    repos = AppSettings.DefaultAppListRepositories();
 
                 bool anyTagCheckFailed = false;
 
