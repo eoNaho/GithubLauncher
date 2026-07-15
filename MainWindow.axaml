@@ -1035,6 +1035,17 @@
 							</Button>
 
 							<Button Classes="navlink"
+									Click="ForkButton_Click">
+								<Grid ColumnDefinitions="28,*">
+									<Path Grid.Column="0" Data="M6 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0 0v2a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V3m-6 8v6m-6-6a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm12 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"
+										  Width="16" Height="16" Stretch="Uniform"
+										  Fill="Transparent" StrokeThickness="2" StrokeLineCap="Round" StrokeJoin="Round"
+										  VerticalAlignment="Center" HorizontalAlignment="Center"/>
+									<TextBlock Grid.Column="1" Text="Our Fork" VerticalAlignment="Center"/>
+								</Grid>
+							</Button>
+
+							<Button Classes="navlink"
 									Click="KofiButton_Click">
 								<Grid ColumnDefinitions="28,*">
 									<Path Grid.Column="0" Data="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
@@ -1199,7 +1210,8 @@
 							</StackPanel>
 						</Button>
 
-						<Button Classes="top-action"
+						<Button x:Name="DownloadsButton"
+								Classes="top-action"
 								Click="DownloadsButton_Click">
 							<StackPanel Orientation="Horizontal" Spacing="10">
 								<Path Data="M21 15V19A2 2 0 0 1 19 21H5A2 2 0 0 1 3 19V15M7 10L12 15L17 10M12 15V3"
@@ -2666,6 +2678,7 @@
 					<Grid>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="*"/>
 						</Grid.RowDefinitions>
 
@@ -2693,7 +2706,38 @@
 							</StackPanel>
 						</Border>
 
-						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="40">
+						<Border Grid.Row="1"
+								Background="{DynamicResource BackgroundBase}"
+								BorderBrush="{DynamicResource Border}"
+								BorderThickness="0,0,0,1"
+								Padding="40,10">
+							<StackPanel Orientation="Horizontal" Spacing="8">
+								<Button x:Name="ActivityTabOverviewButton"
+										Classes="options active"
+										Content="Overview"
+										FontSize="12"
+										Click="ActivityTabOverview_Click"/>
+								<Button x:Name="ActivityTabHeatmapButton"
+										Classes="options"
+										Content="Heatmap"
+										FontSize="12"
+										Click="ActivityTabHeatmap_Click"/>
+								<Button x:Name="ActivityTabPatternsButton"
+										Classes="options"
+										Content="Patterns"
+										FontSize="12"
+										Click="ActivityTabPatterns_Click"/>
+								<Button x:Name="ActivityTabCompareButton"
+										Classes="options"
+										Content="Compare"
+										FontSize="12"
+										Click="ActivityTabCompare_Click"/>
+							</StackPanel>
+						</Border>
+
+						<Grid Grid.Row="2">
+
+						<ScrollViewer x:Name="ActivityOverviewTab" VerticalScrollBarVisibility="Auto" Margin="40" IsVisible="True">
 							<StackPanel Spacing="20">
 
 								<!-- Summary Cards -->
@@ -2744,6 +2788,39 @@
 									</Border>
 								</Grid>
 
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+									</Grid.ColumnDefinitions>
+
+									<Border Grid.Column="0"
+											Background="{DynamicResource BackgroundBase}"
+											BorderBrush="{DynamicResource Border}"
+											BorderThickness="1"
+											CornerRadius="8"
+											Padding="16"
+											Margin="0,0,4,0">
+										<StackPanel>
+											<TextBlock Text="AVG SESSION" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="ActivityAvgSessionText" Text="0m" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+
+									<Border Grid.Column="1"
+											Background="{DynamicResource BackgroundBase}"
+											BorderBrush="{DynamicResource Border}"
+											BorderThickness="1"
+											CornerRadius="8"
+											Padding="16"
+											Margin="4,0,0,0">
+										<StackPanel>
+											<TextBlock Text="STREAK" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="ActivityStreakText" Text="0 days" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+								</Grid>
+
 								<!-- Chart -->
 								<Border Background="{DynamicResource BackgroundBase}"
 										BorderBrush="{DynamicResource Border}"
@@ -2751,7 +2828,14 @@
 										CornerRadius="8"
 										Padding="16">
 									<StackPanel Spacing="12">
-										<TextBlock Text="PLAYTIME" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+										<Grid ColumnDefinitions="*,Auto">
+											<TextBlock Grid.Column="0" Text="PLAYTIME" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+											<ComboBox Grid.Column="1"
+													  x:Name="ActivityChartGameFilter"
+													  Width="160"
+													  SelectionChanged="ActivityChartGameFilter_SelectionChanged"/>
+										</Grid>
+										<TextBlock x:Name="ActivityComparisonText" Text="" FontSize="12" FontWeight="Bold"/>
 										<Border Height="1" Background="{DynamicResource Border}"/>
 										<lvc:CartesianChart x:Name="ActivityChart" Height="240"/>
 									</StackPanel>
@@ -2794,49 +2878,377 @@
 									</StackPanel>
 								</Border>
 
-								<!-- Session History -->
-								<Border x:Name="ActivitySessionDetailPanel"
-										Background="{DynamicResource BackgroundBase}"
+							</StackPanel>
+						</ScrollViewer>
+
+						<ScrollViewer x:Name="ActivityHeatmapTab" VerticalScrollBarVisibility="Auto" Margin="40" IsVisible="False">
+							<StackPanel Spacing="20">
+
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Text="ACTIVITY HEATMAP" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+									<ComboBox Grid.Column="1"
+											  x:Name="ActivityHeatmapGameFilter"
+											  Width="160"
+											  SelectionChanged="ActivityHeatmapGameFilter_SelectionChanged"/>
+								</Grid>
+
+								<Border Background="{DynamicResource BackgroundBase}"
 										BorderBrush="{DynamicResource Border}"
 										BorderThickness="1"
 										CornerRadius="8"
-										Padding="16"
-										IsVisible="False">
+										Padding="16">
 									<StackPanel Spacing="12">
-										<Grid>
-											<Grid.ColumnDefinitions>
-												<ColumnDefinition Width="*"/>
-												<ColumnDefinition Width="Auto"/>
-											</Grid.ColumnDefinitions>
-											<TextBlock Grid.Column="0"
-													   x:Name="ActivitySessionDetailTitle"
-													   Text="SESSION HISTORY"
-													   FontSize="16"
-													   FontWeight="Bold"
-													   Foreground="{DynamicResource TextPrimary}"
-													   VerticalAlignment="Center"/>
-											<Button Grid.Column="1"
-													Classes="options"
-													Content="Close"
-													FontSize="12"
-													Click="CloseActivitySessionDetail_Click"/>
-										</Grid>
+										<ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+											<WrapPanel x:Name="ActivityHeatmapGrid" Orientation="Vertical" Height="112"/>
+										</ScrollViewer>
+										<StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+											<TextBlock Text="Less" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+											<ItemsControl x:Name="ActivityHeatmapLegend">
+												<ItemsControl.ItemsPanel>
+													<ItemsPanelTemplate>
+														<StackPanel Orientation="Horizontal" Spacing="4"/>
+													</ItemsPanelTemplate>
+												</ItemsControl.ItemsPanel>
+												<ItemsControl.ItemTemplate>
+													<DataTemplate>
+														<Border Width="12" Height="12" CornerRadius="2" Background="{Binding}"/>
+													</DataTemplate>
+												</ItemsControl.ItemTemplate>
+											</ItemsControl>
+											<TextBlock Text="More" FontSize="11" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
+										</StackPanel>
+									</StackPanel>
+								</Border>
+
+							</StackPanel>
+						</ScrollViewer>
+
+						<ScrollViewer x:Name="ActivityPatternsTab" VerticalScrollBarVisibility="Auto" Margin="40" IsVisible="False">
+							<StackPanel Spacing="20">
+
+								<Grid ColumnDefinitions="*,Auto">
+									<TextBlock Grid.Column="0" Text="PLAY PATTERNS" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+									<ComboBox Grid.Column="1"
+											  x:Name="ActivityPatternsGameFilter"
+											  Width="160"
+											  SelectionChanged="ActivityPatternsGameFilter_SelectionChanged"/>
+								</Grid>
+
+								<TextBlock x:Name="ActivityPatternInsight" Text="" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" TextWrapping="Wrap"/>
+
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="BY DAY OF WEEK" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+										<lvc:CartesianChart x:Name="ActivityWeekdayChart" Height="200"/>
+									</StackPanel>
+								</Border>
+
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="BY HOUR OF DAY" FontSize="12" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+										<lvc:CartesianChart x:Name="ActivityHourChart" Height="200"/>
+									</StackPanel>
+								</Border>
+
+							</StackPanel>
+						</ScrollViewer>
+
+						<ScrollViewer x:Name="ActivityCompareTab" VerticalScrollBarVisibility="Auto" Margin="40" IsVisible="False">
+							<StackPanel Spacing="20">
+
+								<TextBlock Text="COMPARE GAMES" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+
+								<Grid ColumnDefinitions="*,*">
+									<ComboBox Grid.Column="0"
+											  x:Name="ActivityCompareGameA"
+											  Width="220"
+											  HorizontalAlignment="Left"
+											  SelectionChanged="ActivityCompareGame_SelectionChanged"/>
+									<ComboBox Grid.Column="1"
+											  x:Name="ActivityCompareGameB"
+											  Width="220"
+											  HorizontalAlignment="Left"
+											  SelectionChanged="ActivityCompareGame_SelectionChanged"/>
+								</Grid>
+
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<Grid ColumnDefinitions="*,Auto,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+										<TextBlock Grid.Row="0" Grid.Column="1" x:Name="ActivityCompareNameA" Text="-" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Center" Margin="12,0"/>
+										<TextBlock Grid.Row="0" Grid.Column="2" x:Name="ActivityCompareNameB" Text="-" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" HorizontalAlignment="Center" Margin="12,0"/>
+										<Border Grid.Row="1" Grid.ColumnSpan="3" Height="1" Background="{DynamicResource Border}" Margin="0,8"/>
+
+										<TextBlock Grid.Row="2" Grid.Column="0" Text="Total playtime" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="2" Grid.Column="1" x:Name="ActivityCompareTotalA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="2" Grid.Column="2" x:Name="ActivityCompareTotalB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+
+										<TextBlock Grid.Row="3" Grid.Column="0" Text="Sessions" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="3" Grid.Column="1" x:Name="ActivityCompareSessionsA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="3" Grid.Column="2" x:Name="ActivityCompareSessionsB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+
+										<TextBlock Grid.Row="4" Grid.Column="0" Text="Avg session" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="4" Grid.Column="1" x:Name="ActivityCompareAvgA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="4" Grid.Column="2" x:Name="ActivityCompareAvgB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+
+										<TextBlock Grid.Row="5" Grid.Column="0" Text="Longest session" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="5" Grid.Column="1" x:Name="ActivityCompareLongestA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="5" Grid.Column="2" x:Name="ActivityCompareLongestB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+
+										<TextBlock Grid.Row="6" Grid.Column="0" Text="First played" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="6" Grid.Column="1" x:Name="ActivityCompareFirstA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="6" Grid.Column="2" x:Name="ActivityCompareFirstB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+
+										<TextBlock Grid.Row="7" Grid.Column="0" Text="Last played" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" Margin="0,4"/>
+										<TextBlock Grid.Row="7" Grid.Column="1" x:Name="ActivityCompareLastA" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+										<TextBlock Grid.Row="7" Grid.Column="2" x:Name="ActivityCompareLastB" Text="-" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" HorizontalAlignment="Center" Margin="12,4"/>
+									</Grid>
+								</Border>
+
+								<TextBlock x:Name="ActivityCompareEmptyText" Text="Choose two games to compare." Foreground="{DynamicResource TextSecondary}"/>
+
+							</StackPanel>
+						</ScrollViewer>
+
+						</Grid>
+					</Grid>
+				</Border>
+
+				<!-- Game Profile Panel -->
+				<Border x:Name="GameProfilePanel"
+						Grid.RowSpan="2"
+						Background="{DynamicResource BackgroundBase}"
+						IsVisible="False"
+						ZIndex="110">
+					<Grid>
+						<Grid.RowDefinitions>
+							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="*"/>
+						</Grid.RowDefinitions>
+
+						<Border Grid.Row="0"
+								Background="{DynamicResource BackgroundBase}"
+								BorderBrush="{DynamicResource Border}"
+								BorderThickness="0,0,0,1"
+								Padding="40,10">
+							<Grid ColumnDefinitions="*,Auto">
+								<TextBlock Grid.Column="0"
+										   x:Name="GameProfileTitle"
+										   Text="GAME PROFILE"
+										   FontSize="16"
+										   FontWeight="Bold"
+										   Foreground="{DynamicResource TextPrimary}"
+										   VerticalAlignment="Center"/>
+								<Button Grid.Column="1"
+										Classes="options"
+										Content="Close"
+										FontSize="12"
+										Click="CloseGameProfile_Click"/>
+							</Grid>
+						</Border>
+
+						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="40">
+							<StackPanel Spacing="20">
+
+								<Border CornerRadius="12" ClipToBounds="True" Height="220">
+									<asyncImageLoader:AdvancedImage x:Name="GameProfileHeroImage"
+																	 Stretch="UniformToFill"/>
+								</Border>
+
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+									</Grid.ColumnDefinitions>
+
+									<Border Grid.Column="0" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,4,0">
+										<StackPanel>
+											<TextBlock Text="TOTAL PLAYTIME" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileTotalText" Text="0m" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+									<Border Grid.Column="1" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="4,0">
+										<StackPanel>
+											<TextBlock Text="SESSIONS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileSessionsText" Text="0" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+									<Border Grid.Column="2" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="4,0">
+										<StackPanel>
+											<TextBlock Text="LONGEST SESSION" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileLongestText" Text="0m" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+									<Border Grid.Column="3" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="4,0,0,0">
+										<StackPanel>
+											<TextBlock Text="PLAY DAYS" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfilePlayDaysText" Text="0" FontSize="20" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+								</Grid>
+
+								<Grid>
+									<Grid.ColumnDefinitions>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+										<ColumnDefinition Width="*"/>
+									</Grid.ColumnDefinitions>
+
+									<Border Grid.Column="0" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="0,0,4,0">
+										<StackPanel>
+											<TextBlock Text="FIRST PLAYED" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileFirstPlayedText" Text="-" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+									<Border Grid.Column="1" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="4,0">
+										<StackPanel>
+											<TextBlock Text="LAST PLAYED" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileLastPlayedText" Text="-" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+									<Border Grid.Column="2" Background="{DynamicResource BackgroundBase}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="8" Padding="16" Margin="4,0,0,0">
+										<StackPanel>
+											<TextBlock Text="INSTALLED" FontSize="10" FontWeight="Bold" Foreground="{DynamicResource TextSecondary}" LetterSpacing="1"/>
+											<TextBlock x:Name="GameProfileInstalledText" Text="-" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" Margin="0,6,0,0"/>
+										</StackPanel>
+									</Border>
+								</Grid>
+
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="SESSION HISTORY" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
 										<Border Height="1" Background="{DynamicResource Border}"/>
 
-										<ItemsControl x:Name="ActivitySessionDetailList">
+										<ItemsControl x:Name="GameProfileSessionList">
 											<ItemsControl.ItemTemplate>
 												<DataTemplate>
 													<Grid Margin="0,6,0,0">
 														<Grid.ColumnDefinitions>
 															<ColumnDefinition Width="*"/>
 															<ColumnDefinition Width="Auto"/>
+															<ColumnDefinition Width="Auto"/>
 														</Grid.ColumnDefinitions>
 														<TextBlock Grid.Column="0" Text="{Binding DateLabel}" Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center"/>
-														<TextBlock Grid.Column="1" Text="{Binding DurationLabel}" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="1" Text="{Binding DurationLabel}" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" Margin="0,0,10,0" VerticalAlignment="Center"/>
+														<Button Grid.Column="2"
+																Classes="options"
+																Content="✕"
+																FontSize="12"
+																Click="DeleteActivitySession_Click"/>
 													</Grid>
 												</DataTemplate>
 											</ItemsControl.ItemTemplate>
 										</ItemsControl>
+									</StackPanel>
+								</Border>
+
+							</StackPanel>
+						</ScrollViewer>
+					</Grid>
+				</Border>
+
+				<Border x:Name="DownloadsPanel"
+						Grid.RowSpan="2"
+						Background="{DynamicResource BackgroundBase}"
+						IsVisible="False"
+						ZIndex="100">
+					<Grid>
+						<Grid.RowDefinitions>
+							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="*"/>
+						</Grid.RowDefinitions>
+
+						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="40">
+							<StackPanel Spacing="20">
+
+								<!-- Active Downloads -->
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<TextBlock Text="ACTIVE DOWNLOADS" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}"/>
+										<Border Height="1" Background="{DynamicResource Border}"/>
+
+										<ItemsControl x:Name="ActiveDownloadsList">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<Grid Margin="0,6" ColumnDefinitions="*,Auto">
+														<StackPanel Grid.Column="0" Spacing="6">
+															<Grid ColumnDefinitions="*,Auto">
+																<TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold" VerticalAlignment="Center"/>
+																<TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{DynamicResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+															</Grid>
+															<ProgressBar Value="{Binding DownloadProgress}"
+																		 Minimum="0"
+																		 Maximum="100"
+																		 Height="6"
+																		 Background="{DynamicResource SurfaceAlt}"
+																		 Foreground="{Binding ProgressBarColor}"
+																		 BorderThickness="0"/>
+														</StackPanel>
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+
+										<TextBlock x:Name="ActiveDownloadsEmptyText"
+												   Text="No active downloads right now."
+												   Foreground="{DynamicResource TextSecondary}"
+												   IsVisible="False"/>
+									</StackPanel>
+								</Border>
+
+								<!-- Download History -->
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<Grid ColumnDefinitions="*,Auto">
+											<TextBlock Grid.Column="0" Text="DOWNLOAD HISTORY" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+											<Button Grid.Column="1"
+													Classes="options"
+													Content="Clear history"
+													FontSize="12"
+													Click="ClearDownloadHistory_Click"/>
+										</Grid>
+										<Border Height="1" Background="{DynamicResource Border}"/>
+
+										<ItemsControl x:Name="DownloadHistoryList">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<Grid Margin="0,6,0,0" ColumnDefinitions="*,Auto,Auto">
+														<TextBlock Grid.Column="0" Text="{Binding Name}" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="1" Text="{Binding KindVersionLabel}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="0,0,16,0" VerticalAlignment="Center"/>
+														<TextBlock Grid.Column="2" Text="{Binding CompletedAtLabel}" Foreground="{DynamicResource TextSecondary}" FontSize="12" VerticalAlignment="Center"/>
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+
+										<TextBlock x:Name="DownloadHistoryEmptyText"
+												   Text="No completed downloads yet."
+												   Foreground="{DynamicResource TextSecondary}"
+												   IsVisible="False"/>
 									</StackPanel>
 								</Border>
 

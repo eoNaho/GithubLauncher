@@ -1916,6 +1916,9 @@ namespace GithubLauncher.Models
                     DownloadProgress = 0;
                     SelectedDownload = null;
                     AvailableDownloads = null;
+
+                    var kind = (status == GameStatus.UpdateAvailable) ? "Update" : "Install";
+                    GameManager?.DownloadHistory?.AddRecord(Name ?? string.Empty, Repository, latestRelease.tag_name, kind);
                 }
                 finally
                 {

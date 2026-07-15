@@ -2,7 +2,7 @@ name: .NET Desktop Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "custom" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:

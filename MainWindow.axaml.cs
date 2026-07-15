@@ -404,7 +404,16 @@ namespace GithubLauncher
         public bool IsFeaturedVisible => FeaturedGameInfo != null;
         private bool _isGamesManagerOpen = false;
         private bool _isActivityOpen = false;
+        private bool _isDownloadsOpen = false;
+        private readonly ObservableCollection<GameInfo> _activeDownloads = [];
+        private DispatcherTimer? _downloadsTimer;
         private ActivityPeriod _activityPeriod = ActivityPeriod.Day;
+        private string? _activityChartFilterKey = null;
+        private enum ActivityTab { Overview, Heatmap, Patterns, Compare }
+        private ActivityTab _activityTab = ActivityTab.Overview;
+        private string? _activityHeatmapFilterKey = null;
+        private string? _activityPatternsFilterKey = null;
+        private string? _gameProfileKey = null;
         public string InfoTextLength = "*";
         private SolidColorBrush _themeColorBrush = new(Colors.Transparent);
         public SolidColorBrush ThemeColorBrush
@@ -2474,6 +2483,8 @@ namespace GithubLauncher
             isSettingsPanelOpen = false;
             _isGamesManagerOpen = false;
             _isActivityOpen = false;
+            _isDownloadsOpen = false;
+            StopDownloadsTimer();
 
             if (SettingsPanel != null)
                 SettingsPanel.IsVisible = false;
@@ -2481,8 +2492,11 @@ namespace GithubLauncher
             if (ActivityPanel != null)
                 ActivityPanel.IsVisible = false;
 
-            if (ActivitySessionDetailPanel != null)
-                ActivitySessionDetailPanel.IsVisible = false;
+            if (GameProfilePanel != null)
+                GameProfilePanel.IsVisible = false;
+
+            if (DownloadsPanel != null)
+                DownloadsPanel.IsVisible = false;
 
             var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
             if (manageGamesPanel != null)
@@ -2500,6 +2514,7 @@ namespace GithubLauncher
             ActivityButton?.Classes.Set("active", activeButton == ActivityButton);
             ManageGamesButton?.Classes.Set("active", activeButton == ManageGamesButton);
             SettingsButton?.Classes.Set("active", activeButton == SettingsButton);
+            DownloadsButton?.Classes.Set("active", activeButton == DownloadsButton);
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -2910,20 +2925,125 @@ namespace GithubLauncher
             }
         }
 
-        private async void DownloadsButton_Click(object sender, RoutedEventArgs e)
+        private void DownloadsButton_Click(object sender, RoutedEventArgs e)
         {
-            var downloadingGame = _gameManager.Games.FirstOrDefault(g => g.IsDownloading);
-            if (downloadingGame == null)
+            var shouldOpen = !_isDownloadsOpen;
+            CloseOverlayPanels();
+            if (!shouldOpen)
             {
-                await ShowMessageBoxAsync("No active downloads right now.", "Downloads");
+                HeaderTitleText.Text = "Library";
+                SetActiveNav(ContinueButton);
                 return;
             }
 
-            CloseOverlayPanels();
-            SetActiveNav(ContinueButton);
-            LibrarySearchTextBox.Text = downloadingGame.Name;
-            LibrarySearchTextBox.Focus();
-            RefreshFilteredGames();
+            _isDownloadsOpen = true;
+            DownloadsPanel.IsVisible = true;
+            HeaderTitleText.Text = "Downloads";
+            SetActiveNav(DownloadsButton);
+
+            ActiveDownloadsList.ItemsSource = _activeDownloads;
+            PopulateDownloadsPanel();
+            StartDownloadsTimer();
+        }
+
+        private void StartDownloadsTimer()
+        {
+            _downloadsTimer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
+            _downloadsTimer.Tick -= DownloadsTimer_Tick;
+            _downloadsTimer.Tick += DownloadsTimer_Tick;
+            _downloadsTimer.Start();
+        }
+
+        private void StopDownloadsTimer()
+        {
+            _downloadsTimer?.Stop();
+        }
+
+        private void DownloadsTimer_Tick(object? sender, EventArgs e)
+        {
+            RefreshActiveDownloads();
+        }
+
+        private void RefreshActiveDownloads()
+        {
+            var downloading = _gameManager.Games.Where(g => g.IsDownloading).ToList();
+
+            var finished = _activeDownloads.Where(g => !downloading.Contains(g)).ToList();
+            foreach (var game in finished)
+            {
+                _activeDownloads.Remove(game);
+            }
+
+            foreach (var game in downloading)
+            {
+                if (!_activeDownloads.Contains(game))
+                {
+                    _activeDownloads.Add(game);
+                }
+            }
+
+            ActiveDownloadsEmptyText.IsVisible = _activeDownloads.Count == 0;
+
+            if (finished.Count > 0)
+            {
+                PopulateDownloadHistory();
+            }
+        }
+
+        private void PopulateDownloadsPanel()
+        {
+            RefreshActiveDownloads();
+            PopulateDownloadHistory();
+        }
+
+        private void PopulateDownloadHistory()
+        {
+            var history = _gameManager?.DownloadHistory;
+            if (history == null)
+                return;
+
+            var records = history.GetRecords();
+            DownloadHistoryList.ItemsSource = records.Select(record => new DownloadHistoryRow
+            {
+                Name = record.Name,
+                KindVersionLabel = $"{record.Kind} · {record.Version}",
+                CompletedAtLabel = FormatRelativeTime(record.CompletedAt)
+            }).ToList();
+
+            DownloadHistoryEmptyText.IsVisible = records.Count == 0;
+        }
+
+        private void ClearDownloadHistory_Click(object sender, RoutedEventArgs e)
+        {
+            _gameManager?.DownloadHistory?.ClearHistory();
+            PopulateDownloadHistory();
+        }
+
+        private sealed class DownloadHistoryRow
+        {
+            public string Name { get; init; } = string.Empty;
+            public string KindVersionLabel { get; init; } = string.Empty;
+            public string CompletedAtLabel { get; init; } = string.Empty;
+        }
+
+        private static string FormatRelativeTime(DateTime time)
+        {
+            var timeSince = DateTime.Now - time;
+
+            if (timeSince.TotalMinutes < 1)
+                return "Just now";
+            if (timeSince.TotalMinutes < 2)
+                return "1 minute ago";
+            if (timeSince.TotalMinutes < 60)
+                return $"{(int)timeSince.TotalMinutes} minutes ago";
+            if (timeSince.TotalHours < 2)
+                return "1 hour ago";
+            if (timeSince.TotalHours < 24)
+                return $"{(int)timeSince.TotalHours} hours ago";
+            if (timeSince.TotalDays < 2)
+                return "1 day ago";
+
+            return $"{(int)timeSince.TotalDays} days ago";
         }
 
         private void OpenFolder_Click(object? sender, RoutedEventArgs e)
@@ -2994,6 +3114,19 @@ namespace GithubLauncher
             catch (Exception ex)
             {
                 _ = ShowMessageBoxAsync($"Failed to open Github link: {ex.Message}", "Action Error");
+            }
+        }
+
+        private void ForkButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                string url = "https://github.com/eoNaho/GithubLauncher/";
+                OpenUrl(url);
+            }
+            catch (Exception ex)
+            {
+                _ = ShowMessageBoxAsync($"Failed to open fork link: {ex.Message}", "Action Error");
             }
         }
 
@@ -5027,9 +5160,10 @@ namespace GithubLauncher
             ActivityPanel.IsVisible = true;
             HeaderTitleText.Text = "Activity";
             SetActiveNav(ActivityButton);
-            ActivitySessionDetailPanel.IsVisible = false;
 
+            _activityTab = ActivityTab.Overview;
             UpdateActivityPeriodButtons();
+            UpdateActivityTabButtons();
             PopulateActivityPanel();
         }
 
@@ -5037,7 +5171,6 @@ namespace GithubLauncher
         {
             _isActivityOpen = false;
             ActivityPanel.IsVisible = false;
-            ActivitySessionDetailPanel.IsVisible = false;
             SetActiveNav(ContinueButton);
         }
 
@@ -5069,6 +5202,47 @@ namespace GithubLauncher
             ActivityPeriodMonthButton.Classes.Set("active", _activityPeriod == ActivityPeriod.Month);
         }
 
+        private void ActivityTabOverview_Click(object sender, RoutedEventArgs e)
+        {
+            _activityTab = ActivityTab.Overview;
+            UpdateActivityTabButtons();
+            PopulateActivityPanel();
+        }
+
+        private void ActivityTabHeatmap_Click(object sender, RoutedEventArgs e)
+        {
+            _activityTab = ActivityTab.Heatmap;
+            UpdateActivityTabButtons();
+            PopulateActivityHeatmapTab();
+        }
+
+        private void ActivityTabPatterns_Click(object sender, RoutedEventArgs e)
+        {
+            _activityTab = ActivityTab.Patterns;
+            UpdateActivityTabButtons();
+            PopulateActivityPatternsTab();
+        }
+
+        private void ActivityTabCompare_Click(object sender, RoutedEventArgs e)
+        {
+            _activityTab = ActivityTab.Compare;
+            UpdateActivityTabButtons();
+            PopulateActivityCompareTab();
+        }
+
+        private void UpdateActivityTabButtons()
+        {
+            ActivityTabOverviewButton.Classes.Set("active", _activityTab == ActivityTab.Overview);
+            ActivityTabHeatmapButton.Classes.Set("active", _activityTab == ActivityTab.Heatmap);
+            ActivityTabPatternsButton.Classes.Set("active", _activityTab == ActivityTab.Patterns);
+            ActivityTabCompareButton.Classes.Set("active", _activityTab == ActivityTab.Compare);
+
+            ActivityOverviewTab.IsVisible = _activityTab == ActivityTab.Overview;
+            ActivityHeatmapTab.IsVisible = _activityTab == ActivityTab.Heatmap;
+            ActivityPatternsTab.IsVisible = _activityTab == ActivityTab.Patterns;
+            ActivityCompareTab.IsVisible = _activityTab == ActivityTab.Compare;
+        }
+
         private sealed class ActivityRankingRow
         {
             public string Key { get; init; } = string.Empty;
@@ -5077,10 +5251,27 @@ namespace GithubLauncher
             public string TotalLabel { get; init; } = string.Empty;
         }
 
-        private sealed class ActivitySessionDetailRow
+        private sealed class GameProfileSessionRow
         {
+            public string Key { get; init; } = string.Empty;
+            public DateTime Start { get; init; }
+            public long DurationSeconds { get; init; }
             public string DateLabel { get; init; } = string.Empty;
             public string DurationLabel { get; init; } = string.Empty;
+        }
+
+        private sealed class ActivityGameFilterItem
+        {
+            public string? Key { get; init; }
+            public string Name { get; init; } = string.Empty;
+            public override string ToString() => Name;
+        }
+
+        private static List<ActivityGameFilterItem> BuildGameFilterItems(List<GameRankingEntry> ranking)
+        {
+            var items = new List<ActivityGameFilterItem> { new() { Key = null, Name = "All games" } };
+            items.AddRange(ranking.Select(entry => new ActivityGameFilterItem { Key = entry.Key, Name = entry.Name }));
+            return items;
         }
 
         private static string FormatActivityDuration(long totalSeconds)
@@ -5114,6 +5305,12 @@ namespace GithubLauncher
 
             ActivityRankingEmptyText.IsVisible = ranking.Count == 0;
 
+            ActivityAvgSessionText.Text = FormatActivityDuration((long)activityService.GetAverageSessionSeconds());
+            var streakDays = activityService.GetCurrentStreakDays();
+            ActivityStreakText.Text = streakDays == 1 ? "1 day" : $"{streakDays} days";
+
+            PopulateActivityChartGameFilter(ranking);
+
             var bucketCount = _activityPeriod switch
             {
                 ActivityPeriod.Day => 7,
@@ -5122,7 +5319,9 @@ namespace GithubLauncher
                 _ => 7
             };
 
-            var buckets = activityService.GetAggregatedTotals(_activityPeriod, bucketCount);
+            var buckets = activityService.GetAggregatedTotals(_activityPeriod, bucketCount, _activityChartFilterKey);
+
+            UpdateActivityComparisonText(buckets);
 
             var accentColor = GetThemeSKColor("StatusUpdateBrush", new SKColor(255, 149, 0));
             var textSecondaryColor = GetThemeSKColor("ThemeTextSecondary", new SKColor(184, 184, 184));
@@ -5160,6 +5359,70 @@ namespace GithubLauncher
             };
         }
 
+        private bool _isPopulatingActivityChartFilter = false;
+
+        private void PopulateActivityChartGameFilter(List<GameRankingEntry> ranking)
+        {
+            var items = BuildGameFilterItems(ranking);
+
+            _isPopulatingActivityChartFilter = true;
+            ActivityChartGameFilter.ItemsSource = items;
+            ActivityChartGameFilter.SelectedItem = items.FirstOrDefault(i => i.Key == _activityChartFilterKey) ?? items[0];
+            _isPopulatingActivityChartFilter = false;
+        }
+
+        private void ActivityChartGameFilter_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingActivityChartFilter)
+                return;
+
+            if (ActivityChartGameFilter.SelectedItem is not ActivityGameFilterItem item)
+                return;
+
+            _activityChartFilterKey = item.Key;
+            PopulateActivityPanel();
+        }
+
+        private void UpdateActivityComparisonText(List<ActivityBucket> buckets)
+        {
+            if (buckets.Count < 2)
+            {
+                ActivityComparisonText.Text = string.Empty;
+                return;
+            }
+
+            var current = buckets[^1].TotalSeconds;
+            var previous = buckets[^2].TotalSeconds;
+            var delta = current - previous;
+
+            if (delta == 0)
+            {
+                ActivityComparisonText.Text = "No change vs previous period";
+                ActivityComparisonText.Foreground = (IBrush?)Application.Current?.FindResource("TextSecondary") ?? Brushes.Gray;
+                return;
+            }
+
+            var sign = delta > 0 ? "▲" : "▼";
+            var resourceKey = delta > 0 ? "StatusInstalledBrush" : "StatusUpdateBrush";
+            ActivityComparisonText.Text = $"{sign} {FormatActivityDuration(Math.Abs(delta))} vs previous period";
+            ActivityComparisonText.Foreground = (IBrush?)Application.Current?.FindResource(resourceKey) ?? Brushes.Gray;
+        }
+
+        private void DeleteActivitySession_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button button || button.DataContext is not GameProfileSessionRow row)
+                return;
+
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            activityService.DeleteSession(row.Key, row.Start, row.DurationSeconds);
+
+            ShowGameProfile(row.Key);
+            PopulateActivityPanel();
+        }
+
         private static SKColor GetThemeSKColor(string resourceKey, SKColor fallback)
         {
             if (Application.Current?.TryGetResource(resourceKey, out var resource) == true && resource is ISolidColorBrush solidBrush)
@@ -5187,25 +5450,297 @@ namespace GithubLauncher
             if (sender is not Button button || button.DataContext is not ActivityRankingRow row)
                 return;
 
+            ShowGameProfile(row.Key);
+        }
+
+        private bool _isPopulatingActivityHeatmapFilter = false;
+        private bool _isPopulatingActivityPatternsFilter = false;
+        private bool _isPopulatingActivityCompareFilter = false;
+
+        private void PopulateActivityHeatmapTab()
+        {
             var activityService = _gameManager?.ActivityService;
             if (activityService == null)
                 return;
 
-            ActivitySessionDetailTitle.Text = $"SESSION HISTORY — {row.Name}";
+            var ranking = activityService.GetRanking();
+            var items = BuildGameFilterItems(ranking);
 
-            var sessions = activityService.GetSessions(row.Key);
-            ActivitySessionDetailList.ItemsSource = sessions.Select(session => new ActivitySessionDetailRow
+            _isPopulatingActivityHeatmapFilter = true;
+            ActivityHeatmapGameFilter.ItemsSource = items;
+            ActivityHeatmapGameFilter.SelectedItem = items.FirstOrDefault(i => i.Key == _activityHeatmapFilterKey) ?? items[0];
+            _isPopulatingActivityHeatmapFilter = false;
+
+            const int days = 371; // 53 weeks, GitHub-style calendar
+            var daily = activityService.GetDailyTotals(days, _activityHeatmapFilterKey);
+            var maxSeconds = daily.Count > 0 ? daily.Max(d => d.Seconds) : 0;
+
+            ActivityHeatmapGrid.Children.Clear();
+
+            var firstDate = daily.Count > 0 ? daily[0].Date : DateTime.Now.Date;
+            var leadingPad = ((int)firstDate.DayOfWeek + 6) % 7; // days since Monday
+            for (int i = 0; i < leadingPad; i++)
             {
+                ActivityHeatmapGrid.Children.Add(new Border { Width = 12, Height = 12, Margin = new Thickness(2), Opacity = 0 });
+            }
+
+            foreach (var (date, seconds) in daily)
+            {
+                var intensity = GetHeatmapIntensity(seconds, maxSeconds);
+                var cell = new Border
+                {
+                    Width = 12,
+                    Height = 12,
+                    Margin = new Thickness(2),
+                    CornerRadius = new CornerRadius(2),
+                    Background = GetHeatmapBrush(intensity)
+                };
+                ToolTip.SetTip(cell, $"{date:yyyy-MM-dd}: {FormatActivityDuration(seconds)}");
+                ActivityHeatmapGrid.Children.Add(cell);
+            }
+
+            ActivityHeatmapLegend.ItemsSource = Enumerable.Range(0, 5).Select(i => GetHeatmapBrush(i)).ToList();
+        }
+
+        private static int GetHeatmapIntensity(long seconds, long maxSeconds)
+        {
+            if (seconds <= 0 || maxSeconds <= 0)
+                return 0;
+
+            var ratio = (double)seconds / maxSeconds;
+            if (ratio > 0.75) return 4;
+            if (ratio > 0.5) return 3;
+            if (ratio > 0.25) return 2;
+            return 1;
+        }
+
+        private IBrush GetHeatmapBrush(int intensity)
+        {
+            if (intensity == 0)
+                return (IBrush?)Application.Current?.FindResource("Border") ?? Brushes.Gray;
+
+            var accent = GetThemeSKColor("StatusUpdateBrush", new SKColor(255, 149, 0));
+            var baseColor = Color.FromArgb(accent.Alpha, accent.Red, accent.Green, accent.Blue);
+            var opacity = intensity switch
+            {
+                1 => 0.25,
+                2 => 0.5,
+                3 => 0.75,
+                _ => 1.0
+            };
+
+            return new SolidColorBrush(baseColor, opacity);
+        }
+
+        private void ActivityHeatmapGameFilter_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingActivityHeatmapFilter)
+                return;
+
+            if (ActivityHeatmapGameFilter.SelectedItem is not ActivityGameFilterItem item)
+                return;
+
+            _activityHeatmapFilterKey = item.Key;
+            PopulateActivityHeatmapTab();
+        }
+
+        private void PopulateActivityPatternsTab()
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            var ranking = activityService.GetRanking();
+            var items = BuildGameFilterItems(ranking);
+
+            _isPopulatingActivityPatternsFilter = true;
+            ActivityPatternsGameFilter.ItemsSource = items;
+            ActivityPatternsGameFilter.SelectedItem = items.FirstOrDefault(i => i.Key == _activityPatternsFilterKey) ?? items[0];
+            _isPopulatingActivityPatternsFilter = false;
+
+            var weekdayTotals = activityService.GetDayOfWeekTotals(_activityPatternsFilterKey);
+            var hourTotals = activityService.GetHourOfDayTotals(_activityPatternsFilterKey);
+
+            var accentColor = GetThemeSKColor("StatusUpdateBrush", new SKColor(255, 149, 0));
+            var textSecondaryColor = GetThemeSKColor("ThemeTextSecondary", new SKColor(184, 184, 184));
+            var borderColor = GetThemeSKColor("ThemeBorder", new SKColor(45, 45, 48));
+
+            var weekdayLabels = new List<string> { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
+
+            ActivityWeekdayChart.Series = new ISeries[]
+            {
+                new ColumnSeries<double>
+                {
+                    Name = "Playtime (minutes)",
+                    Values = weekdayTotals.Select(s => s / 60.0).ToArray(),
+                    Fill = new SolidColorPaint(accentColor),
+                    Stroke = null
+                }
+            };
+            ActivityWeekdayChart.XAxes = new[] { new Axis { Labels = weekdayLabels, LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
+            ActivityWeekdayChart.YAxes = new[] { new Axis { Labeler = value => $"{value:0}m", LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
+
+            var hourLabels = Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToList();
+            ActivityHourChart.Series = new ISeries[]
+            {
+                new ColumnSeries<double>
+                {
+                    Name = "Playtime (minutes)",
+                    Values = hourTotals.Select(s => s / 60.0).ToArray(),
+                    Fill = new SolidColorPaint(accentColor),
+                    Stroke = null
+                }
+            };
+            ActivityHourChart.XAxes = new[] { new Axis { Labels = hourLabels, LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
+            ActivityHourChart.YAxes = new[] { new Axis { Labeler = value => $"{value:0}m", LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
+
+            ActivityPatternInsight.Text = BuildPatternInsight(weekdayTotals, hourTotals);
+        }
+
+        private static string BuildPatternInsight(long[] weekdayTotals, long[] hourTotals)
+        {
+            if (weekdayTotals.Sum() == 0)
+                return "No play sessions recorded yet.";
+
+            var weekdayNames = new[] { "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday" };
+            var topDayIndex = Array.IndexOf(weekdayTotals, weekdayTotals.Max());
+            var topHourIndex = Array.IndexOf(hourTotals, hourTotals.Max());
+
+            var partOfDay = topHourIndex switch
+            {
+                >= 5 and < 12 => "the morning",
+                >= 12 and < 18 => "the afternoon",
+                >= 18 and < 23 => "the evening",
+                _ => "late night"
+            };
+
+            return $"You play the most on {weekdayNames[topDayIndex]}, usually during {partOfDay} (around {topHourIndex:00}:00).";
+        }
+
+        private void ActivityPatternsGameFilter_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingActivityPatternsFilter)
+                return;
+
+            if (ActivityPatternsGameFilter.SelectedItem is not ActivityGameFilterItem item)
+                return;
+
+            _activityPatternsFilterKey = item.Key;
+            PopulateActivityPatternsTab();
+        }
+
+        private void PopulateActivityCompareTab()
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            var ranking = activityService.GetRanking();
+            var items = BuildGameFilterItems(ranking).Where(i => i.Key != null).ToList();
+
+            _isPopulatingActivityCompareFilter = true;
+            var previousA = ActivityCompareGameA.SelectedItem as ActivityGameFilterItem;
+            var previousB = ActivityCompareGameB.SelectedItem as ActivityGameFilterItem;
+            ActivityCompareGameA.ItemsSource = items;
+            ActivityCompareGameB.ItemsSource = items;
+            ActivityCompareGameA.SelectedItem = items.FirstOrDefault(i => i.Key == previousA?.Key) ?? items.FirstOrDefault();
+            ActivityCompareGameB.SelectedItem = items.FirstOrDefault(i => i.Key == previousB?.Key) ?? items.Skip(1).FirstOrDefault() ?? items.FirstOrDefault();
+            _isPopulatingActivityCompareFilter = false;
+
+            RenderActivityCompare();
+        }
+
+        private void RenderActivityCompare()
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            var itemA = ActivityCompareGameA.SelectedItem as ActivityGameFilterItem;
+            var itemB = ActivityCompareGameB.SelectedItem as ActivityGameFilterItem;
+
+            var statsA = itemA?.Key != null ? activityService.GetGameStats(itemA.Key) : null;
+            var statsB = itemB?.Key != null ? activityService.GetGameStats(itemB.Key) : null;
+
+            ActivityCompareEmptyText.IsVisible = statsA == null || statsB == null;
+
+            ActivityCompareNameA.Text = statsA?.Name ?? "-";
+            ActivityCompareNameB.Text = statsB?.Name ?? "-";
+            ActivityCompareTotalA.Text = statsA != null ? FormatActivityDuration(statsA.TotalSeconds) : "-";
+            ActivityCompareTotalB.Text = statsB != null ? FormatActivityDuration(statsB.TotalSeconds) : "-";
+            ActivityCompareSessionsA.Text = statsA != null ? statsA.SessionCount.ToString() : "-";
+            ActivityCompareSessionsB.Text = statsB != null ? statsB.SessionCount.ToString() : "-";
+            ActivityCompareAvgA.Text = statsA != null ? FormatActivityDuration((long)statsA.AvgSeconds) : "-";
+            ActivityCompareAvgB.Text = statsB != null ? FormatActivityDuration((long)statsB.AvgSeconds) : "-";
+            ActivityCompareLongestA.Text = statsA != null ? FormatActivityDuration(statsA.LongestSeconds) : "-";
+            ActivityCompareLongestB.Text = statsB != null ? FormatActivityDuration(statsB.LongestSeconds) : "-";
+            ActivityCompareFirstA.Text = statsA != null ? statsA.FirstPlayed.ToString("yyyy-MM-dd") : "-";
+            ActivityCompareFirstB.Text = statsB != null ? statsB.FirstPlayed.ToString("yyyy-MM-dd") : "-";
+            ActivityCompareLastA.Text = statsA != null ? statsA.LastPlayed.ToString("yyyy-MM-dd") : "-";
+            ActivityCompareLastB.Text = statsB != null ? statsB.LastPlayed.ToString("yyyy-MM-dd") : "-";
+        }
+
+        private void ActivityCompareGame_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_isPopulatingActivityCompareFilter)
+                return;
+
+            RenderActivityCompare();
+        }
+
+        private void ShowGameProfile(string key)
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            var stats = activityService.GetGameStats(key);
+            if (stats == null)
+                return;
+
+            _gameProfileKey = key;
+            GameProfileTitle.Text = stats.Name;
+            GameProfileTotalText.Text = FormatActivityDuration(stats.TotalSeconds);
+            GameProfileSessionsText.Text = stats.SessionCount.ToString();
+            GameProfileLongestText.Text = FormatActivityDuration(stats.LongestSeconds);
+            GameProfilePlayDaysText.Text = stats.PlayDays.ToString();
+            GameProfileFirstPlayedText.Text = stats.FirstPlayed.ToString("yyyy-MM-dd");
+            GameProfileLastPlayedText.Text = stats.LastPlayed.ToString("yyyy-MM-dd");
+
+            var installedRecord = _gameManager?.DownloadHistory?.GetRecords()
+                .Where(r => string.Equals(r.Name, stats.Name, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(r => r.CompletedAt)
+                .FirstOrDefault();
+            GameProfileInstalledText.Text = installedRecord != null ? installedRecord.CompletedAt.ToString("yyyy-MM-dd") : "-";
+
+            var gameInfo = _gameManager?.Games.FirstOrDefault(g => g.ActivityKey == key);
+            GameProfileHeroImage.Source = gameInfo?.HeroImageSource ?? string.Empty;
+
+            RefreshGameProfileSessions(key);
+
+            GameProfilePanel.IsVisible = true;
+        }
+
+        private void RefreshGameProfileSessions(string key)
+        {
+            var activityService = _gameManager?.ActivityService;
+            if (activityService == null)
+                return;
+
+            var sessions = activityService.GetSessions(key);
+            GameProfileSessionList.ItemsSource = sessions.Select(session => new GameProfileSessionRow
+            {
+                Key = key,
+                Start = session.Start,
+                DurationSeconds = session.DurationSeconds,
                 DateLabel = session.Start.ToString("yyyy-MM-dd HH:mm") + (session.Estimated ? " (estimated)" : string.Empty),
                 DurationLabel = FormatActivityDuration(session.DurationSeconds)
             }).ToList();
-
-            ActivitySessionDetailPanel.IsVisible = true;
         }
 
-        private void CloseActivitySessionDetail_Click(object sender, RoutedEventArgs e)
+        private void CloseGameProfile_Click(object sender, RoutedEventArgs e)
         {
-            ActivitySessionDetailPanel.IsVisible = false;
+            GameProfilePanel.IsVisible = false;
         }
 
         private async void LoadGamesFromJson()
