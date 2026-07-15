@@ -40,7 +40,6 @@
 
 	<ItemGroup>
 		<AvaloniaResource Include="Assets/**" />
-		<AvaloniaResource Include="Assets/Icons/**" />
 	</ItemGroup>
 
 	<ItemGroup>

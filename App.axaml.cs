@@ -130,7 +130,7 @@ public class App : Application, INotifyPropertyChanged
 
     private static bool _hasCheckedForAppUpdates = false;
     private static readonly object _updateLock = new object();
-    private const string Repository = "SirDiabo/GithubLauncher";
+    private const string Repository = "eoNaho/GithubLauncher";
     private const string VersionFileName = "version.txt";
     private const string UpdateCheckFileName = "update_check.json";
     private const string BackupDirectoryPrefix = "backup_";

@@ -3634,6 +3634,12 @@ namespace GithubLauncher
         }
         private void RefreshFilteredGames()
         {
+            if (!Dispatcher.UIThread.CheckAccess())
+            {
+                Dispatcher.UIThread.Post(RefreshFilteredGames);
+                return;
+            }
+
             IEnumerable<GameInfo> source = _gameManager?.Games ?? Enumerable.Empty<GameInfo>();
 
             string query = _librarySearchQuery.Trim();
@@ -3673,13 +3679,17 @@ namespace GithubLauncher
             foreach (var game in filtered)
                 FilteredGames.Add(game);
 
+            bool hasAnyGames = (_gameManager?.Games.Count ?? 0) > 0;
+
             var noResultsText = this.FindControl<TextBlock>("LibraryNoResultsText");
             if (noResultsText != null)
             {
                 bool hasActiveFilter = !string.IsNullOrEmpty(query) || _showUpdatesOnlyFilter || ActiveCategoryFilter != "All";
-                bool hasAnyGames = (_gameManager?.Games.Count ?? 0) > 0;
                 noResultsText.IsVisible = hasActiveFilter && hasAnyGames && filtered.Count == 0;
             }
+
+            UpdateEmptyStateVisibility();
+            UpdateContinueButtonState();
 
             OnPropertyChanged(nameof(UpdateCount));
             OnPropertyChanged(nameof(DownloadCount));
@@ -4566,6 +4576,8 @@ namespace GithubLauncher
 
                 await SaveGamesToJsonAsync(apps);
                 await LoadGamesManagerAsync();
+                await _gameManager.LoadGamesAsync();
+                ApplySorting();
                 await ShowMessageBoxAsync($"App '{game.Name}' deleted successfully.", "App Deleted");
             }
             catch (Exception ex)
@@ -4960,6 +4972,8 @@ namespace GithubLauncher
 
                 await SaveGamesToJsonAsync(apps);
                 await LoadGamesManagerAsync();
+                await _gameManager.LoadGamesAsync();
+                ApplySorting();
                 await ShowMessageBoxAsync($"App '{game.Name}' deleted successfully.", "App Deleted");
             }
             catch (Exception ex)
