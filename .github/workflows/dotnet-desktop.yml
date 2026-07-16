@@ -3,6 +3,7 @@ name: .NET Desktop Build
 on:
   push:
     branches: [ "custom" ]
+    tags: [ "v*.*.*" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
@@ -10,7 +11,7 @@ on:
 jobs:
   build-windows:
     runs-on: windows-latest
-    
+
     env:
       Solution_Name: GithubLauncher.sln
 
@@ -32,16 +33,20 @@ jobs:
     - name: Publish Windows x64
       run: dotnet publish GithubLauncher.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o publish/win-x64
 
+    - name: Compress Windows x64
+      shell: pwsh
+      run: Compress-Archive -Path publish/win-x64/* -DestinationPath publish/GithubLauncher-Windows-x64.zip
+
     - name: Upload Windows x64
       uses: actions/upload-artifact@v4
       with:
         name: GithubLauncher-Windows-x64
-        path: publish/win-x64
+        path: publish/GithubLauncher-Windows-x64.zip
         retention-days: 14
 
   build-linux:
     runs-on: ubuntu-latest
-    
+
     env:
       Solution_Name: GithubLauncher.sln
 
@@ -66,23 +71,29 @@ jobs:
     - name: Publish Linux ARM64
       run: dotnet publish GithubLauncher.csproj -c Release -r linux-arm64 --self-contained true -p:PublishSingleFile=true -p:PublishTrimmed=false -o publish/linux-arm64
 
+    - name: Compress Linux x64
+      run: (cd publish/linux-x64 && zip -r ../GithubLauncher-Linux-x64.zip .)
+
+    - name: Compress Linux ARM64
+      run: (cd publish/linux-arm64 && zip -r ../GithubLauncher-Linux-ARM64.zip .)
+
     - name: Upload Linux x64
       uses: actions/upload-artifact@v4
       with:
         name: GithubLauncher-Linux-x64
-        path: publish/linux-x64
+        path: publish/GithubLauncher-Linux-x64.zip
         retention-days: 14
 
     - name: Upload Linux ARM64
       uses: actions/upload-artifact@v4
       with:
         name: GithubLauncher-Linux-ARM64
-        path: publish/linux-arm64
+        path: publish/GithubLauncher-Linux-ARM64.zip
         retention-days: 14
 
   build-macos:
     runs-on: macos-latest
-    
+
     env:
       Solution_Name: GithubLauncher.sln
       App_Name: GithubLauncher
@@ -110,13 +121,13 @@ jobs:
         APP_BUNDLE="publish/${{ env.App_Name }}.app"
         mkdir -p "$APP_BUNDLE/Contents/MacOS"
         mkdir -p "$APP_BUNDLE/Contents/Resources"
-        
+
         # Copy all published files to the app bundle
         cp -r publish/osx-x64/* "$APP_BUNDLE/Contents/MacOS/"
-        
+
         # Make the executable... executable
         chmod +x "$APP_BUNDLE/Contents/MacOS/${{ env.App_Name }}"
-        
+
         # Create Info.plist
         cat > "$APP_BUNDLE/Contents/Info.plist" << EOF
         <?xml version="1.0" encoding="UTF-8"?>
@@ -143,9 +154,31 @@ jobs:
         </plist>
         EOF
 
+    - name: Compress macOS .app
+      run: (cd publish && zip -r GithubLauncher-macOS-x64.zip "${{ env.App_Name }}.app")
+
     - name: Upload macOS x64
       uses: actions/upload-artifact@v4
       with:
         name: GithubLauncher-macOS-x64
-        path: publish/${{ env.App_Name }}.app
+        path: publish/GithubLauncher-macOS-x64.zip
         retention-days: 14
+
+  create-release:
+    needs: [build-windows, build-linux, build-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: artifacts/**/*.zip
+        generate_release_notes: true
