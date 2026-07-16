@@ -416,6 +416,10 @@ namespace GithubLauncher
         private string? _activityHeatmapFilterKey = null;
         private string? _activityPatternsFilterKey = null;
         private string? _gameProfileKey = null;
+        private readonly ColumnSeries<double> _activityChartSeries = new() { Name = "Playtime (minutes)", Stroke = null };
+        private readonly ColumnSeries<double> _activityWeekdaySeries = new() { Name = "Playtime (minutes)", Stroke = null };
+        private readonly ColumnSeries<double> _activityHourSeries = new() { Name = "Playtime (minutes)", Stroke = null };
+        private bool _activityChartsInitialized = false;
         public string InfoTextLength = "*";
         private SolidColorBrush _themeColorBrush = new(Colors.Transparent);
         public SolidColorBrush ThemeColorBrush
@@ -552,6 +556,8 @@ namespace GithubLauncher
                     }
                 }
             };
+
+            this.Opened += (_, _) => UpdateNavActivePillPosition(ContinueButton);
         }
 
         // Is Theme Color Light
@@ -2487,6 +2493,18 @@ namespace GithubLauncher
             SetActiveNav(ContinueButton);
         }
 
+        private static void ShowOverlayPanel(Border panel)
+        {
+            panel.IsVisible = true;
+
+            var child = panel.Child;
+            if (child == null)
+                return;
+
+            child.Opacity = 0;
+            Dispatcher.UIThread.Post(() => child.Opacity = 1, DispatcherPriority.Render);
+        }
+
         private void CloseOverlayPanels()
         {
             isSettingsPanelOpen = false;
@@ -2528,6 +2546,41 @@ namespace GithubLauncher
             ManageGamesButton?.Classes.Set("active", activeButton == ManageGamesButton);
             SettingsButton?.Classes.Set("active", activeButton == SettingsButton);
             DownloadsButton?.Classes.Set("active", activeButton == DownloadsButton);
+
+            UpdateNavActivePillPosition(activeButton);
+        }
+
+        private void UpdateNavActivePillPosition(Button? activeButton)
+        {
+            if (NavActivePill == null || NavLinksStack == null)
+                return;
+
+            if (activeButton == null || activeButton == DownloadsButton)
+            {
+                NavActivePill.IsVisible = false;
+                return;
+            }
+
+            var isSidebarButton = activeButton == ContinueButton
+                || activeButton == ActivityButton
+                || activeButton == ManageGamesButton
+                || activeButton == SettingsButton;
+
+            if (!isSidebarButton)
+            {
+                NavActivePill.IsVisible = false;
+                return;
+            }
+
+            var point = activeButton.TranslatePoint(new Point(0, 0), NavLinksStack);
+            if (point == null)
+                return;
+
+            if (NavActivePill.RenderTransform is TranslateTransform transform)
+                transform.Y = point.Value.Y;
+
+            NavActivePill.Height = activeButton.Bounds.Height;
+            NavActivePill.IsVisible = true;
         }
 
         private void SettingsButton_Click(object sender, RoutedEventArgs e)
@@ -2542,7 +2595,7 @@ namespace GithubLauncher
             }
 
             isSettingsPanelOpen = true;
-            SettingsPanel.IsVisible = true;
+            ShowOverlayPanel(SettingsPanel);
             HeaderTitleText.Text = "Settings";
             SetActiveNav(SettingsButton);
         }
@@ -2953,7 +3006,7 @@ namespace GithubLauncher
             }
 
             _isDownloadsOpen = true;
-            DownloadsPanel.IsVisible = true;
+            ShowOverlayPanel(DownloadsPanel);
             HeaderTitleText.Text = "Downloads";
             SetActiveNav(DownloadsButton);
 
@@ -3076,7 +3129,7 @@ namespace GithubLauncher
             }
 
             _isNotificationsOpen = true;
-            NotificationsPanel.IsVisible = true;
+            ShowOverlayPanel(NotificationsPanel);
             HeaderTitleText.Text = "Notifications";
             SetActiveNav(null);
             _gameManager?.Notifications?.MarkAllRead();
@@ -5236,7 +5289,7 @@ namespace GithubLauncher
             var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
             if (manageGamesPanel != null)
             {
-                manageGamesPanel.IsVisible = true;
+                ShowOverlayPanel(manageGamesPanel);
             }
 
             // Update header text
@@ -5262,7 +5315,7 @@ namespace GithubLauncher
             }
 
             _isActivityOpen = true;
-            ActivityPanel.IsVisible = true;
+            ShowOverlayPanel(ActivityPanel);
             HeaderTitleText.Text = "Activity";
             SetActiveNav(ActivityButton);
 
@@ -5388,6 +5441,23 @@ namespace GithubLauncher
             return $"{timeSpan.Minutes}m";
         }
 
+        private void EnsureActivityChartsInitialized()
+        {
+            if (_activityChartsInitialized)
+                return;
+
+            ActivityChart.Series = new ISeries[] { _activityChartSeries };
+            ActivityChart.AnimationsSpeed = TimeSpan.FromMilliseconds(400);
+
+            ActivityWeekdayChart.Series = new ISeries[] { _activityWeekdaySeries };
+            ActivityWeekdayChart.AnimationsSpeed = TimeSpan.FromMilliseconds(400);
+
+            ActivityHourChart.Series = new ISeries[] { _activityHourSeries };
+            ActivityHourChart.AnimationsSpeed = TimeSpan.FromMilliseconds(400);
+
+            _activityChartsInitialized = true;
+        }
+
         private void PopulateActivityPanel()
         {
             var activityService = _gameManager?.ActivityService;
@@ -5432,16 +5502,9 @@ namespace GithubLauncher
             var textSecondaryColor = GetThemeSKColor("ThemeTextSecondary", new SKColor(184, 184, 184));
             var borderColor = GetThemeSKColor("ThemeBorder", new SKColor(45, 45, 48));
 
-            ActivityChart.Series = new ISeries[]
-            {
-                new ColumnSeries<double>
-                {
-                    Name = "Playtime (minutes)",
-                    Values = buckets.Select(b => b.TotalSeconds / 60.0).ToArray(),
-                    Fill = new SolidColorPaint(accentColor),
-                    Stroke = null
-                }
-            };
+            EnsureActivityChartsInitialized();
+            _activityChartSeries.Values = buckets.Select(b => b.TotalSeconds / 60.0).ToArray();
+            _activityChartSeries.Fill = new SolidColorPaint(accentColor);
 
             ActivityChart.XAxes = new[]
             {
@@ -5672,30 +5735,15 @@ namespace GithubLauncher
 
             var weekdayLabels = new List<string> { "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" };
 
-            ActivityWeekdayChart.Series = new ISeries[]
-            {
-                new ColumnSeries<double>
-                {
-                    Name = "Playtime (minutes)",
-                    Values = weekdayTotals.Select(s => s / 60.0).ToArray(),
-                    Fill = new SolidColorPaint(accentColor),
-                    Stroke = null
-                }
-            };
+            EnsureActivityChartsInitialized();
+            _activityWeekdaySeries.Values = weekdayTotals.Select(s => s / 60.0).ToArray();
+            _activityWeekdaySeries.Fill = new SolidColorPaint(accentColor);
             ActivityWeekdayChart.XAxes = new[] { new Axis { Labels = weekdayLabels, LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
             ActivityWeekdayChart.YAxes = new[] { new Axis { Labeler = value => $"{value:0}m", LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
 
             var hourLabels = Enumerable.Range(0, 24).Select(h => h.ToString("00")).ToList();
-            ActivityHourChart.Series = new ISeries[]
-            {
-                new ColumnSeries<double>
-                {
-                    Name = "Playtime (minutes)",
-                    Values = hourTotals.Select(s => s / 60.0).ToArray(),
-                    Fill = new SolidColorPaint(accentColor),
-                    Stroke = null
-                }
-            };
+            _activityHourSeries.Values = hourTotals.Select(s => s / 60.0).ToArray();
+            _activityHourSeries.Fill = new SolidColorPaint(accentColor);
             ActivityHourChart.XAxes = new[] { new Axis { Labels = hourLabels, LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
             ActivityHourChart.YAxes = new[] { new Axis { Labeler = value => $"{value:0}m", LabelsPaint = new SolidColorPaint(textSecondaryColor), SeparatorsPaint = new SolidColorPaint(borderColor) } };
 
@@ -5823,7 +5871,7 @@ namespace GithubLauncher
 
             RefreshGameProfileSessions(key);
 
-            GameProfilePanel.IsVisible = true;
+            ShowOverlayPanel(GameProfilePanel);
         }
 
         private void RefreshGameProfileSessions(string key)
@@ -7457,7 +7505,7 @@ namespace GithubLauncher
                 var changelogPanel = this.FindControl<Border>("ChangelogPanel");
                 if (changelogPanel != null)
                 {
-                    changelogPanel.IsVisible = true;
+                    ShowOverlayPanel(changelogPanel);
                 }
 
                 // Update header title

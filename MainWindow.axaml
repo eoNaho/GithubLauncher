@@ -250,7 +250,13 @@
 										 Height="4"
 										 Background="Transparent"
 										 Foreground="{Binding ProgressBarColor}"
-										 BorderThickness="0"/>
+										 BorderThickness="0">
+								<ProgressBar.Transitions>
+									<Transitions>
+										<DoubleTransition Property="Value" Duration="0:0:0.3"/>
+									</Transitions>
+								</ProgressBar.Transitions>
+							</ProgressBar>
 						</Border>
 					</Grid>
 				</Grid>
@@ -379,7 +385,13 @@
 									 Height="4"
 									 Background="Transparent"
 									 Foreground="{Binding ProgressBarColor}"
-									 BorderThickness="0"/>
+									 BorderThickness="0">
+							<ProgressBar.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Value" Duration="0:0:0.3"/>
+								</Transitions>
+							</ProgressBar.Transitions>
+						</ProgressBar>
 					</Border>
 				</Grid>
 			</Border>
@@ -826,10 +838,7 @@
 	</Style>
 
 	<Style Selector="Button.navlink.active">
-		<Setter Property="Background" Value="{DynamicResource SurfaceAlt}"/>
 		<Setter Property="Foreground" Value="{DynamicResource TextPrimary}"/>
-		<Setter Property="BorderBrush" Value="{DynamicResource Accent}"/>
-		<Setter Property="BorderThickness" Value="3,0,0,0"/>
 	</Style>
 
 	<Style Selector="Button.navlink Path">
@@ -962,7 +971,28 @@
 				</StackPanel>
 
 				<!-- Navigation -->
-				<StackPanel Grid.Row="1" VerticalAlignment="Top" Spacing="8" HorizontalAlignment="Stretch">
+				<Border x:Name="NavActivePill"
+						Grid.Row="1"
+						Height="48"
+						VerticalAlignment="Top"
+						HorizontalAlignment="Stretch"
+						Background="{DynamicResource SurfaceAlt}"
+						BorderBrush="{DynamicResource Accent}"
+						BorderThickness="3,0,0,0"
+						CornerRadius="{DynamicResource ControlRadius}"
+						IsVisible="False">
+					<Border.RenderTransform>
+						<TranslateTransform>
+							<TranslateTransform.Transitions>
+								<Transitions>
+									<DoubleTransition Property="Y" Duration="0:0:0.2"/>
+								</Transitions>
+							</TranslateTransform.Transitions>
+						</TranslateTransform>
+					</Border.RenderTransform>
+				</Border>
+
+				<StackPanel x:Name="NavLinksStack" Grid.Row="1" VerticalAlignment="Top" Spacing="8" HorizontalAlignment="Stretch">
 						<Button x:Name="ContinueButton"
 								Classes="navlink active"
 								Click="HomeButton_Click">
@@ -1197,22 +1227,22 @@
 										Height="32"
 										CornerRadius="8"
 										Background="{DynamicResource SurfaceAlt}">
-									<Path Data="M21 12A9 9 0 0 0 6 5.3L3 8M3 3V8H8M3 12A9 9 0 0 0 18 18.7L21 16M21 21V16H16"
-										  Width="16"
+									<Grid Width="16"
 										  Height="16"
-										  Stretch="Uniform"
-										  Fill="Transparent"
-										  Stroke="{DynamicResource TextPrimary}"
-										  StrokeThickness="2"
-										  StrokeLineCap="Round"
-										  StrokeJoin="Round"
-										  RenderTransformOrigin="0.5,0.5"
 										  HorizontalAlignment="Center"
-										  VerticalAlignment="Center">
-										<Path.RenderTransform>
+										  VerticalAlignment="Center"
+										  RenderTransformOrigin="50%,50%">
+										<Grid.RenderTransform>
 											<RotateTransform Angle="{Binding UpdateIconAngle}"/>
-										</Path.RenderTransform>
-									</Path>
+										</Grid.RenderTransform>
+										<Path Data="M21 12A9 9 0 0 0 6 5.3L3 8M3 3V8H8M3 12A9 9 0 0 0 18 18.7L21 16M21 21V16H16"
+											  Stretch="Uniform"
+											  Fill="Transparent"
+											  Stroke="{DynamicResource TextPrimary}"
+											  StrokeThickness="2"
+											  StrokeLineCap="Round"
+											  StrokeJoin="Round"/>
+									</Grid>
 								</Border>
 								<StackPanel VerticalAlignment="Center" Spacing="1">
 									<TextBlock Text="{Binding UpdateButtonTitle}"
@@ -1594,6 +1624,11 @@
 						IsVisible="False">
 					<ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
 					              Padding="40,0,40,0">
+						<ScrollViewer.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</ScrollViewer.Transitions>
 						<StackPanel x:Name="SettingsContent"
 						            Margin="0,0,0,48">
 
@@ -2370,6 +2405,11 @@
 						IsVisible="False"
 						ZIndex="100">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<ScrollViewer VerticalScrollBarVisibility="Auto"
 									  Margin="40">
 							<StackPanel MaxWidth="900">
@@ -2399,6 +2439,11 @@
 						IsVisible="False"
 						ZIndex="100">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="*"/>
@@ -2708,6 +2753,11 @@
 						IsVisible="False"
 						ZIndex="100">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="Auto"/>
@@ -3063,6 +3113,11 @@
 						IsVisible="False"
 						ZIndex="110">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="*"/>
@@ -3201,6 +3256,11 @@
 						IsVisible="False"
 						ZIndex="100">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="*"/>
@@ -3234,7 +3294,13 @@
 																		 Height="6"
 																		 Background="{DynamicResource SurfaceAlt}"
 																		 Foreground="{Binding ProgressBarColor}"
-																		 BorderThickness="0"/>
+																		 BorderThickness="0">
+																<ProgressBar.Transitions>
+																	<Transitions>
+																		<DoubleTransition Property="Value" Duration="0:0:0.3"/>
+																	</Transitions>
+																</ProgressBar.Transitions>
+															</ProgressBar>
 														</StackPanel>
 													</Grid>
 												</DataTemplate>
@@ -3296,6 +3362,11 @@
 						IsVisible="False"
 						ZIndex="100">
 					<Grid>
+						<Grid.Transitions>
+							<Transitions>
+								<DoubleTransition Property="Opacity" Duration="0:0:0.18"/>
+							</Transitions>
+						</Grid.Transitions>
 						<Grid.RowDefinitions>
 							<RowDefinition Height="Auto"/>
 							<RowDefinition Height="*"/>
