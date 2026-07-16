@@ -1156,19 +1156,38 @@
 								HorizontalAlignment="Right"
 								VerticalAlignment="Center"
 								Spacing="16">
-						<Button Classes="round-icon"
-								ToolTip.Tip="Updates"
-								Click="CheckforUpdates_Click">
-							<Path Data="M18 8A6 6 0 0 0 6 8C6 15 3 17 3 17H21C21 17 18 15 18 8M13.73 21A2 2 0 0 1 10.27 21"
-								  Width="16"
-								  Height="16"
-								  Stretch="Uniform"
-								  Fill="Transparent"
-								  Stroke="{DynamicResource TextPrimary}"
-								  StrokeThickness="2"
-								  StrokeLineCap="Round"
-								  StrokeJoin="Round"/>
-						</Button>
+						<Grid>
+							<Button x:Name="NotificationsButton"
+									Classes="round-icon"
+									ToolTip.Tip="Notifications"
+									Click="NotificationsButton_Click">
+								<Path Data="M18 8A6 6 0 0 0 6 8C6 15 3 17 3 17H21C21 17 18 15 18 8M13.73 21A2 2 0 0 1 10.27 21"
+									  Width="16"
+									  Height="16"
+									  Stretch="Uniform"
+									  Fill="Transparent"
+									  Stroke="{DynamicResource TextPrimary}"
+									  StrokeThickness="2"
+									  StrokeLineCap="Round"
+									  StrokeJoin="Round"/>
+							</Button>
+							<Border Classes="badge"
+									IsVisible="{Binding HasUnreadNotifications}"
+									HorizontalAlignment="Right"
+									VerticalAlignment="Top"
+									Margin="0,-4,-4,0"
+									MinWidth="16"
+									Height="16"
+									Padding="4,0"
+									IsHitTestVisible="False">
+								<TextBlock Text="{Binding NotificationUnreadCount}"
+										   FontSize="9"
+										   FontWeight="Bold"
+										   Foreground="White"
+										   HorizontalAlignment="Center"
+										   VerticalAlignment="Center"/>
+							</Border>
+						</Grid>
 
 						<Button Classes="top-action"
 								ToolTip.Tip="{Binding UpdateButtonSubtitle}"
@@ -1626,6 +1645,19 @@
 													  Checked="CloseAfterLaunchCheckBox_Checked"
 													  Unchecked="CloseAfterLaunchCheckBox_Unchecked"/>
 											<TextBlock Text="Close the launcher automatically after starting an app"
+													   FontSize="11"
+													   Foreground="{DynamicResource TextSecondary}"
+													   Margin="20,0,0,0"/>
+										</StackPanel>
+
+										<StackPanel Spacing="2">
+											<CheckBox x:Name="EnableNotificationsCheckBox"
+													  Content="Enable Notifications"
+													  Foreground="{DynamicResource TextPrimary}"
+													  FontSize="13" FontWeight="SemiBold"
+													  Checked="EnableNotificationsCheckBox_Checked"
+													  Unchecked="EnableNotificationsCheckBox_Unchecked"/>
+											<TextBlock Text="Show OS notifications for downloads, updates and streaks"
 													   FontSize="11"
 													   Foreground="{DynamicResource TextSecondary}"
 													   Margin="20,0,0,0"/>
@@ -3247,6 +3279,69 @@
 
 										<TextBlock x:Name="DownloadHistoryEmptyText"
 												   Text="No completed downloads yet."
+												   Foreground="{DynamicResource TextSecondary}"
+												   IsVisible="False"/>
+									</StackPanel>
+								</Border>
+
+							</StackPanel>
+						</ScrollViewer>
+					</Grid>
+				</Border>
+
+				<!-- Notifications Panel -->
+				<Border x:Name="NotificationsPanel"
+						Grid.RowSpan="2"
+						Background="{DynamicResource BackgroundBase}"
+						IsVisible="False"
+						ZIndex="100">
+					<Grid>
+						<Grid.RowDefinitions>
+							<RowDefinition Height="Auto"/>
+							<RowDefinition Height="*"/>
+						</Grid.RowDefinitions>
+
+						<ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="40">
+							<StackPanel Spacing="20">
+
+								<Border Background="{DynamicResource BackgroundBase}"
+										BorderBrush="{DynamicResource Border}"
+										BorderThickness="1"
+										CornerRadius="8"
+										Padding="16">
+									<StackPanel Spacing="12">
+										<Grid ColumnDefinitions="*,Auto">
+											<TextBlock Grid.Column="0" Text="NOTIFICATIONS" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextPrimary}" VerticalAlignment="Center"/>
+											<Button Grid.Column="1"
+													Classes="options"
+													Content="Clear"
+													FontSize="12"
+													Click="ClearNotifications_Click"/>
+										</Grid>
+										<Border Height="1" Background="{DynamicResource Border}"/>
+
+										<ItemsControl x:Name="NotificationsList">
+											<ItemsControl.ItemTemplate>
+												<DataTemplate>
+													<Grid Margin="0,6,0,0" ColumnDefinitions="Auto,*,Auto">
+														<Border Grid.Column="0"
+																Width="8" Height="8"
+																CornerRadius="4"
+																Margin="0,0,10,0"
+																VerticalAlignment="Center"
+																Background="{Binding AccentBrush}"/>
+														<StackPanel Grid.Column="1" Spacing="2">
+															<TextBlock Text="{Binding Title}" Foreground="{DynamicResource TextPrimary}" FontWeight="Bold"/>
+															<TextBlock Text="{Binding Body}" Foreground="{DynamicResource TextSecondary}" FontSize="12" TextWrapping="Wrap"/>
+														</StackPanel>
+														<TextBlock Grid.Column="2" Text="{Binding TimeLabel}" Foreground="{DynamicResource TextSecondary}" FontSize="12" Margin="10,0,0,0" VerticalAlignment="Top"/>
+													</Grid>
+												</DataTemplate>
+											</ItemsControl.ItemTemplate>
+										</ItemsControl>
+
+										<TextBlock x:Name="NotificationsEmptyText"
+												   Text="No notifications yet."
 												   Foreground="{DynamicResource TextSecondary}"
 												   IsVisible="False"/>
 									</StackPanel>

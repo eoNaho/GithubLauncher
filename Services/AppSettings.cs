@@ -34,6 +34,8 @@ namespace GithubLauncher
         public float MusicVolume { get; set; } = 0.2f;
         public float BackgroundOpacity { get; set; } = 0.15f;
         public bool EnableGamepadInput { get; set; } = true;
+        public bool EnableNotifications { get; set; } = true;
+        public int LastNotifiedStreak { get; set; } = 0;
         public string LinuxWindowsLaunchCommand { get; set; } = string.Empty;
         public string AppListRepository { get; set; } = "SirDiabo/GHLAppList"; // legacy — kept for migration only
         public List<string> AppListRepositories { get; set; } = DefaultAppListRepositories();

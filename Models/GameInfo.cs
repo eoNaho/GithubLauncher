@@ -929,11 +929,28 @@ namespace GithubLauncher.Models
             if (ShouldSuggestUpdate())
             {
                 Status = GameStatus.UpdateAvailable;
+                GameManager?.Notifications?.NotifyUpdateAvailable(Name ?? string.Empty, LatestVersion ?? string.Empty);
             }
             else if (Status != GameStatus.Downloading && Status != GameStatus.Installing && !string.IsNullOrWhiteSpace(InstalledVersion))
             {
                 Status = GameStatus.Installed;
             }
+        }
+
+        private static readonly int[] StreakMilestones = [3, 7, 14, 30, 60, 100, 365];
+
+        private void CheckStreakMilestone(GameActivityService activityService)
+        {
+            if (GameManager == null)
+                return;
+
+            var streakDays = activityService.GetCurrentStreakDays();
+            if (!StreakMilestones.Contains(streakDays) || streakDays <= GameManager._settings.LastNotifiedStreak)
+                return;
+
+            GameManager._settings.LastNotifiedStreak = streakDays;
+            AppSettings.Save(GameManager._settings);
+            GameManager.Notifications?.NotifyStreakMilestone(streakDays);
         }
 
         public void SetVersionPreferences(string? preferredVersion, string? skippedUpdateVersion)
@@ -1919,6 +1936,7 @@ namespace GithubLauncher.Models
 
                     var kind = (status == GameStatus.UpdateAvailable) ? "Update" : "Install";
                     GameManager?.DownloadHistory?.AddRecord(Name ?? string.Empty, Repository, latestRelease.tag_name, kind);
+                    GameManager?.Notifications?.NotifyDownloadComplete(Name ?? string.Empty, kind);
                 }
                 finally
                 {
@@ -1962,6 +1980,7 @@ namespace GithubLauncher.Models
                         await ShowMessageBoxAsync($"Network error installing {Name}: {ex.Message}\n\nPlease check your internet connection.", "Network Error");
                     }
                 });
+                GameManager?.Notifications?.NotifyDownloadError(Name ?? string.Empty, ex.Message);
                 Status = GameStatus.NotInstalled;
                 DownloadProgress = 0;
             }
@@ -1971,6 +1990,7 @@ namespace GithubLauncher.Models
                 {
                     await ShowMessageBoxAsync($"Permission error installing {Name}: {ex.Message}\n\nPlease check folder permissions.", "Permission Error");
                 });
+                GameManager?.Notifications?.NotifyDownloadError(Name ?? string.Empty, ex.Message);
                 Status = GameStatus.NotInstalled;
                 DownloadProgress = 0;
             }
@@ -1980,6 +2000,7 @@ namespace GithubLauncher.Models
                 {
                     await ShowMessageBoxAsync($"Error installing {Name}: {ex.Message}", "Installation Error");
                 });
+                GameManager?.Notifications?.NotifyDownloadError(Name ?? string.Empty, ex.Message);
                 Status = GameStatus.NotInstalled;
                 DownloadProgress = 0;
             }
@@ -2407,6 +2428,7 @@ namespace GithubLauncher.Models
 
                             activityService.EndSession(activityKey, DateTime.Now);
                             RefreshPlaytime();
+                            CheckStreakMilestone(activityService);
                         });
                     }
                 }

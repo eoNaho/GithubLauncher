@@ -152,6 +152,8 @@ namespace GithubLauncher
 
         public bool HasUpdates => UpdateCount > 0;
         public bool HasDownloads => DownloadCount > 0;
+        public int NotificationUnreadCount => _gameManager?.Notifications?.UnreadCount ?? 0;
+        public bool HasUnreadNotifications => NotificationUnreadCount > 0;
         private bool _isCheckingUpdates;
         private readonly DispatcherTimer _updateSpinTimer;
         private double _updateIconAngle;
@@ -485,6 +487,13 @@ namespace GithubLauncher
 
             _gameManager = new GameManager();
             _gameManager.Games.CollectionChanged += (s, e) => RefreshFilteredGames();
+            _gameManager.Notifications.Changed += () => Dispatcher.UIThread.Post(() =>
+            {
+                OnPropertyChanged(nameof(NotificationUnreadCount));
+                OnPropertyChanged(nameof(HasUnreadNotifications));
+                if (_isNotificationsOpen)
+                    PopulateNotificationsPanel();
+            });
 
             _settings.NormalizeTheme();
             ApplyThemeResources();
@@ -2484,6 +2493,7 @@ namespace GithubLauncher
             _isGamesManagerOpen = false;
             _isActivityOpen = false;
             _isDownloadsOpen = false;
+            _isNotificationsOpen = false;
             StopDownloadsTimer();
 
             if (SettingsPanel != null)
@@ -2497,6 +2507,9 @@ namespace GithubLauncher
 
             if (DownloadsPanel != null)
                 DownloadsPanel.IsVisible = false;
+
+            if (NotificationsPanel != null)
+                NotificationsPanel.IsVisible = false;
 
             var manageGamesPanel = this.FindControl<Border>("ManageGamesPanel");
             if (manageGamesPanel != null)
@@ -2620,6 +2633,9 @@ namespace GithubLauncher
 
                 if (CloseAfterLaunchCheckBox != null)
                     CloseAfterLaunchCheckBox.IsChecked = _settings.CloseAfterLaunch;
+
+                if (EnableNotificationsCheckBox != null)
+                    EnableNotificationsCheckBox.IsChecked = _settings.EnableNotifications;
 
                 PlatformString = _settings.Platform switch
                 {
@@ -3044,6 +3060,75 @@ namespace GithubLauncher
                 return "1 day ago";
 
             return $"{(int)timeSince.TotalDays} days ago";
+        }
+
+        private bool _isNotificationsOpen = false;
+
+        private void NotificationsButton_Click(object sender, RoutedEventArgs e)
+        {
+            var shouldOpen = !_isNotificationsOpen;
+            CloseOverlayPanels();
+            if (!shouldOpen)
+            {
+                HeaderTitleText.Text = "Library";
+                SetActiveNav(ContinueButton);
+                return;
+            }
+
+            _isNotificationsOpen = true;
+            NotificationsPanel.IsVisible = true;
+            HeaderTitleText.Text = "Notifications";
+            SetActiveNav(null);
+            _gameManager?.Notifications?.MarkAllRead();
+            OnPropertyChanged(nameof(NotificationUnreadCount));
+            OnPropertyChanged(nameof(HasUnreadNotifications));
+            PopulateNotificationsPanel();
+        }
+
+        private void PopulateNotificationsPanel()
+        {
+            var notifications = _gameManager?.Notifications;
+            if (notifications == null)
+                return;
+
+            var history = notifications.GetHistory();
+            NotificationsList.ItemsSource = history.Select(record => new NotificationRow
+            {
+                Title = record.Title,
+                Body = record.Body,
+                TimeLabel = FormatRelativeTime(record.Timestamp),
+                AccentBrush = GetNotificationAccentBrush(record.Kind)
+            }).ToList();
+
+            NotificationsEmptyText.IsVisible = history.Count == 0;
+        }
+
+        private void ClearNotifications_Click(object sender, RoutedEventArgs e)
+        {
+            _gameManager?.Notifications?.ClearHistory();
+            PopulateNotificationsPanel();
+        }
+
+        private static IBrush GetNotificationAccentBrush(string kind)
+        {
+            var resourceKey = kind switch
+            {
+                "DownloadComplete" => "StatusInstalledBrush",
+                "DownloadError" => "StatusUpdateBrush",
+                "UpdateAvailable" => "StatusUpdateBrush",
+                "Streak" => "Accent",
+                _ => "TextSecondary"
+            };
+
+            return (IBrush?)Application.Current?.FindResource(resourceKey) ?? Brushes.Gray;
+        }
+
+        private sealed class NotificationRow
+        {
+            public string Title { get; init; } = string.Empty;
+            public string Body { get; init; } = string.Empty;
+            public string TimeLabel { get; init; } = string.Empty;
+            public IBrush AccentBrush { get; init; } = Brushes.Gray;
         }
 
         private void OpenFolder_Click(object? sender, RoutedEventArgs e)
@@ -4107,6 +4192,26 @@ namespace GithubLauncher
             {
                 _settings.CloseAfterLaunch = false;
                 OnPropertyChanged(nameof(CloseAfterLaunch));
+                OnSettingChanged();
+            }
+        }
+
+        private void EnableNotificationsCheckBox_Checked(object sender, RoutedEventArgs e)
+        {
+            if (_settings != null)
+            {
+                _settings.EnableNotifications = true;
+                _gameManager?.Notifications?.SetEnabled(true);
+                OnSettingChanged();
+            }
+        }
+
+        private void EnableNotificationsCheckBox_Unchecked(object sender, RoutedEventArgs e)
+        {
+            if (_settings != null)
+            {
+                _settings.EnableNotifications = false;
+                _gameManager?.Notifications?.SetEnabled(false);
                 OnSettingChanged();
             }
         }
@@ -6111,6 +6216,7 @@ namespace GithubLauncher
             AppDomain.CurrentDomain.BaseDirectory, "app_catalog_version.txt");
 
         private System.Threading.CancellationTokenSource? _catalogLoadCts;
+        private readonly System.Threading.SemaphoreSlim _catalogIconThrottle = new(6);
 
         private async Task LoadAppCatalogAsync(bool forceRefresh)
         {
@@ -6166,7 +6272,7 @@ namespace GithubLauncher
                 {
                     try
                     {
-                        string tag = await FetchLatestCatalogTagAsync(repo, ct).ConfigureAwait(false);
+                        string tag = await _gameManager.Catalog.FetchLatestTagAsync(repo, _settings?.GitHubApiToken, ct).ConfigureAwait(false);
                         return (repo, tag, failed: false);
                     }
                     catch (HttpRequestException ex)
@@ -6205,7 +6311,7 @@ namespace GithubLauncher
                         await Dispatcher.UIThread.InvokeAsync(() =>
                             statusText.Text = $"Downloading {repo} {latestTag}...");
 
-                        string catalogJson = await FetchCatalogJsonAsync(repo, latestTag, ct).ConfigureAwait(false);
+                        string catalogJson = await _gameManager.Catalog.FetchCatalogJsonAsync(repo, latestTag, _settings?.GitHubApiToken, ct).ConfigureAwait(false);
                         await File.WriteAllTextAsync(repoCachePath, catalogJson, ct).ConfigureAwait(false);
                         await File.WriteAllTextAsync(repoVersionPath, latestTag, ct).ConfigureAwait(false);
                         cachedVersion = latestTag;
@@ -6225,7 +6331,7 @@ namespace GithubLauncher
 
                     anyCacheAvailable = true;
                     string json = await File.ReadAllTextAsync(repoCachePath, ct).ConfigureAwait(false);
-                    var categories = ParseCatalogJson(json);
+                    var categories = CatalogService.ParseCatalogJson(json);
                     allCategories.AddRange(categories);
 
                     if (!string.IsNullOrEmpty(cachedVersion))
@@ -6310,72 +6416,6 @@ namespace GithubLauncher
             }
         }
 
-        private async Task<string> FetchLatestCatalogTagAsync(string repo, System.Threading.CancellationToken ct)
-        {
-            string url = $"https://api.github.com/repos/{repo}/releases/latest";
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_settings?.GitHubApiToken))
-                request.Headers.Authorization = new AuthenticationHeaderValue("token", _settings.GitHubApiToken);
-
-            using var response = await _gameManager.HttpClient.SendAsync(request, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            string body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-
-            using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("tag_name", out var tag))
-                return tag.GetString() ?? string.Empty;
-            return string.Empty;
-        }
-
-        private async Task<string> FetchCatalogJsonAsync(string repo, string tag, System.Threading.CancellationToken ct)
-        {
-            string url = $"https://github.com/{repo}/releases/download/{tag}/apps.json";
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_settings?.GitHubApiToken))
-                request.Headers.Authorization = new AuthenticationHeaderValue("token", _settings.GitHubApiToken);
-
-            using var response = await _gameManager.HttpClient.SendAsync(request, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-            return await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        }
-
-        private record CatalogEntry(string Name, string Repository, string FolderName, string AppIconUrl, string Category);
-
-        private List<(string Category, List<CatalogEntry> Entries)> ParseCatalogJson(string json)
-        {
-            // Parse errors (JsonException) propagate to LoadAppCatalogAsync so an
-            // invalid catalog is reported distinctly from a genuinely empty one.
-            var result = new List<(string, List<CatalogEntry>)>();
-            using var doc = JsonDocument.Parse(json);
-            var root = doc.RootElement;
-
-            if (root.ValueKind == JsonValueKind.Object)
-            {
-                foreach (var section in root.EnumerateObject())
-                {
-                    var entries = new List<CatalogEntry>();
-                    if (section.Value.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var item in section.Value.EnumerateArray())
-                        {
-                            string name = item.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
-                            string repo = item.TryGetProperty("repository", out var r) ? r.GetString() ?? string.Empty : string.Empty;
-                            string folder = item.TryGetProperty("folderName", out var f) ? f.GetString() ?? string.Empty : string.Empty;
-                            string icon = string.Empty;
-                            if (item.TryGetProperty("gameIconUrl", out var gi)) icon = gi.GetString() ?? string.Empty;
-                            else if (item.TryGetProperty("appIconUrl", out var ai)) icon = ai.GetString() ?? string.Empty;
-                            string category = item.TryGetProperty("category", out var c) ? c.GetString() ?? string.Empty : string.Empty;
-
-                            if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(repo))
-                                entries.Add(new CatalogEntry(name, repo, folder, icon, category));
-                        }
-                    }
-                    if (entries.Count > 0)
-                        result.Add((section.Name, entries));
-                }
-            }
-            return result;
-        }
 
         private readonly List<(TextBlock Header, WrapPanel Cards)> _catalogCategoryPanels = new();
         private TextBlock? _catalogNoResultsText;
@@ -6547,13 +6587,21 @@ namespace GithubLauncher
                 {
                     try
                     {
-                        var imageData = await _gameManager.HttpClient.GetByteArrayAsync(entry.AppIconUrl, ct);
-                        var bitmap = new Avalonia.Media.Imaging.Bitmap(new System.IO.MemoryStream(imageData));
-
-                        await Dispatcher.UIThread.InvokeAsync(() =>
+                        await _catalogIconThrottle.WaitAsync(ct);
+                        try
                         {
-                            img.Source = bitmap;
-                        });
+                            var imageData = await _gameManager.HttpClient.GetByteArrayAsync(entry.AppIconUrl, ct);
+                            var bitmap = new Avalonia.Media.Imaging.Bitmap(new System.IO.MemoryStream(imageData));
+
+                            await Dispatcher.UIThread.InvokeAsync(() =>
+                            {
+                                img.Source = bitmap;
+                            });
+                        }
+                        finally
+                        {
+                            _catalogIconThrottle.Release();
+                        }
                     }
                     catch (OperationCanceledException)
                     {

@@ -27,6 +27,8 @@ namespace GithubLauncher.Services
         public string CacheFolder => _cacheFolder;
         public GameActivityService ActivityService { get; }
         public DownloadHistoryService DownloadHistory { get; }
+        public NotificationService Notifications { get; }
+        public CatalogService Catalog { get; }
 
         private string _currentVersionString = string.Empty;
         public string CurrentVersionString
@@ -49,6 +51,7 @@ namespace GithubLauncher.Services
             _httpClient.Timeout = TimeSpan.FromMinutes(30);
             ActivityService = new GameActivityService(AppDomain.CurrentDomain.BaseDirectory);
             DownloadHistory = new DownloadHistoryService(AppDomain.CurrentDomain.BaseDirectory);
+            Catalog = new CatalogService(_httpClient);
 
             try
             {
@@ -59,6 +62,8 @@ namespace GithubLauncher.Services
                 System.Diagnostics.Debug.WriteLine($"Failed to load settings in GameManager: {ex.Message}");
                 _settings = new AppSettings();
             }
+
+            Notifications = new NotificationService(AppDomain.CurrentDomain.BaseDirectory, _settings.EnableNotifications);
 
             _appsFolder = !string.IsNullOrEmpty(_settings?.AppsPath)
                 ? _settings.AppsPath
