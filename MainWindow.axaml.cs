@@ -2667,6 +2667,9 @@ namespace GithubLauncher
                 if (GitHubTokenTextBox != null)
                     GitHubTokenTextBox.Text = _settings.GitHubApiToken;
 
+                if (GitLabTokenTextBox != null)
+                    GitLabTokenTextBox.Text = _settings.GitLabApiToken;
+
                 if (GamePathTextBox != null)
                     GamePathTextBox.Text = _settings.AppsPath;
 
@@ -4278,6 +4281,15 @@ namespace GithubLauncher
             }
         }
 
+        private void GitLabTokenTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (_settings != null && sender is TextBox textBox)
+            {
+                _settings.GitLabApiToken = textBox.Text ?? string.Empty;
+                OnSettingChanged();
+            }
+        }
+
         private void BackgroundPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (_settings != null && sender is TextBox textBox)
@@ -4387,6 +4399,17 @@ namespace GithubLauncher
                 _settings.GitHubApiToken = string.Empty;
                 if (GitHubTokenTextBox != null)
                     GitHubTokenTextBox.Text = string.Empty;
+                OnSettingChanged();
+            }
+        }
+
+        private void ClearGitLabToken_Click(object sender, RoutedEventArgs e)
+        {
+            if (_settings != null)
+            {
+                _settings.GitLabApiToken = string.Empty;
+                if (GitLabTokenTextBox != null)
+                    GitLabTokenTextBox.Text = string.Empty;
                 OnSettingChanged();
             }
         }
@@ -6764,6 +6787,8 @@ namespace GithubLauncher
                 {
                     Name = entry.Name,
                     Repository = entry.Repository,
+                    Provider = entry.Provider,
+                    Host = entry.Host,
                     FolderName = entry.FolderName,
                     GameIconUrl = entry.AppIconUrl,
                     HeroImageUrl = null,
@@ -7537,7 +7562,7 @@ namespace GithubLauncher
                     changelogContent.ItemsSource = new[] { loadingPanel };
                 }
 
-                string changelogText = await FetchChangelogAsync(game.Repository ?? string.Empty);
+                string changelogText = await FetchChangelogAsync(game);
 
                 if (changelogContent != null)
                 {
@@ -7965,31 +7990,60 @@ namespace GithubLauncher
             }
         }
 
-        private async Task<string> FetchChangelogAsync(string repository)
+        private async Task<string> FetchChangelogAsync(GameInfo game)
         {
+            string repository = game.Repository ?? string.Empty;
+            bool isGitLab = string.Equals(game.Provider, "gitlab", StringComparison.OrdinalIgnoreCase);
+
             try
             {
                 using var client = new HttpClient();
                 client.DefaultRequestHeaders.Add("User-Agent", "GithubLauncher");
 
-                if (!string.IsNullOrEmpty(_settings?.GitHubApiToken))
+                string url;
+                if (isGitLab)
                 {
-                    client.DefaultRequestHeaders.Add("Authorization", $"token {_settings.GitHubApiToken}");
+                    string host = string.IsNullOrWhiteSpace(game.Host) ? "gitlab.com" : game.Host;
+                    if (!string.IsNullOrEmpty(_settings?.GitLabApiToken))
+                    {
+                        client.DefaultRequestHeaders.TryAddWithoutValidation("PRIVATE-TOKEN", _settings.GitLabApiToken);
+                    }
+                    url = $"https://{host}/api/v4/projects/{Uri.EscapeDataString(repository)}/releases";
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(_settings?.GitHubApiToken))
+                    {
+                        client.DefaultRequestHeaders.Add("Authorization", $"token {_settings.GitHubApiToken}");
+                    }
+                    url = $"https://api.github.com/repos/{repository}/releases/latest";
                 }
 
-                var url = $"https://api.github.com/repos/{repository}/releases/latest";
                 var response = await client.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    return "Failed to fetch changelog from GitHub.";
+                    return $"Failed to fetch changelog from {(isGitLab ? "GitLab" : "GitHub")}.";
                 }
 
                 var json = await response.Content.ReadAsStringAsync();
                 using var document = JsonDocument.Parse(json);
                 var root = document.RootElement;
 
-                if (root.TryGetProperty("body", out var bodyElement))
+                if (isGitLab)
+                {
+                    // GitLab returns an array of releases (newest first) rather than a single "latest" object.
+                    if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0 &&
+                        root[0].TryGetProperty("description", out var descriptionElement))
+                    {
+                        var description = descriptionElement.GetString();
+                        if (!string.IsNullOrEmpty(description))
+                        {
+                            return description;
+                        }
+                    }
+                }
+                else if (root.TryGetProperty("body", out var bodyElement))
                 {
                     var body = bodyElement.GetString();
                     if (!string.IsNullOrEmpty(body))

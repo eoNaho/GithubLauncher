@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace GithubLauncher.Services
 {
-    public record CatalogEntry(string Name, string Repository, string FolderName, string AppIconUrl, string Category);
+    public record CatalogEntry(string Name, string Repository, string FolderName, string AppIconUrl, string Category, string Provider = "github", string? Host = null);
 
     public class CatalogService
     {
@@ -68,9 +68,12 @@ namespace GithubLauncher.Services
                             if (item.TryGetProperty("gameIconUrl", out var gi)) icon = gi.GetString() ?? string.Empty;
                             else if (item.TryGetProperty("appIconUrl", out var ai)) icon = ai.GetString() ?? string.Empty;
                             string category = item.TryGetProperty("category", out var c) ? c.GetString() ?? string.Empty : string.Empty;
+                            string provider = item.TryGetProperty("provider", out var pr) ? pr.GetString() ?? string.Empty : string.Empty;
+                            if (string.IsNullOrWhiteSpace(provider)) provider = "github";
+                            string? host = item.TryGetProperty("host", out var ho) ? ho.GetString() : null;
 
                             if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(repo))
-                                entries.Add(new CatalogEntry(name, repo, folder, icon, category));
+                                entries.Add(new CatalogEntry(name, repo, folder, icon, category, provider, host));
                         }
                     }
                     if (entries.Count > 0)

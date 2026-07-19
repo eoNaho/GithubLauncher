@@ -2390,6 +2390,37 @@
 												   FontStyle="Italic"
 												   TextWrapping="Wrap"/>
 
+										<Border Height="1" Background="{DynamicResource Border}" Margin="0,8,0,8"/>
+
+										<!-- GitLab API Token -->
+										<TextBlock Text="GITLAB API TOKEN"
+												   FontSize="10" FontWeight="Bold"
+												   Foreground="{DynamicResource TextSecondary}"
+												   LetterSpacing="1"
+												   Margin="0,0,0,4"/>
+
+										<TextBlock Text="Used for apps hosted on GitLab (gitlab.com or self-hosted instances)"
+												   FontSize="11"
+												   Foreground="{DynamicResource TextSecondary}"
+												   TextWrapping="Wrap"
+												   Margin="0,0,0,6"/>
+
+										<TextBox x:Name="GitLabTokenTextBox"
+												 Foreground="{DynamicResource TextPrimary}"
+												 Background="{DynamicResource Surface}"
+												 BorderBrush="{DynamicResource Border}"
+												 BorderThickness="1"
+												 Padding="12,10"
+												 CornerRadius="4"
+												 TextChanged="GitLabTokenTextBox_TextChanged"
+												 Text="{Binding Settings.GitLabApiToken, Mode=TwoWay}"/>
+
+										<Button Classes="options"
+												Content="Clear Token"
+												HorizontalAlignment="Stretch"
+												Click="ClearGitLabToken_Click"
+												FontSize="12"/>
+
 									</StackPanel>
 								</TabItem>
 

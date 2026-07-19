@@ -50,6 +50,12 @@ Create a token with no special permissions needed and set it in the launcher set
 You can create a token at ```GitHub Settings -> Developer settings > Personal access tokens > Tokens (classic) > Generate new token```
 You don't need to give it any special permissions. Then paste that Token into your Settings field. Do not share your Token!
 
+### GitLab API Token
+Apps hosted on GitLab use a separate personal access token. Create one under
+`GitLab -> User Settings -> Access Tokens` (no special scopes required for public projects; use
+the `read_api` scope for private ones) and paste it into the GitLab Token field in Settings.
+For self-hosted GitLab instances, create the token on that instance.
+
 ### apps.json Structure
 
 The launcher uses an `apps.json` file to manage the available apps. Every entry is user-managed and editable; there are no built-in stable, experimental, or custom categories.
@@ -59,9 +65,14 @@ The launcher uses an `apps.json` file to manage the available apps. Every entry 
 Each app entry requires the following properties:
 
 - **`name`** - The display name of the app as it appears in the launcher
-- **`repository`** - The GitHub repository in the format `username/repository`
+- **`repository`** - The repository path in the format `username/repository` (GitHub), or `group/project` / `group/subgroup/project` (GitLab)
 - **`folderName`** - The folder name where the app will be downloaded and installed
 - **`appIconUrl`** - URL of the app's icon image. If null, a default icon will be used.
+
+Optional properties:
+
+- **`provider`** - `"github"` (default) or `"gitlab"`. Omit this field for GitHub apps.
+- **`host`** - Only used when `provider` is `"gitlab"`. The GitLab host to use, e.g. `"gitlab.com"` (default) or a self-hosted instance such as `"gitlab.example.com"`.
 
 #### Example Configuration
 
@@ -79,10 +90,29 @@ Each app entry requires the following properties:
             "repository": "anotheruser/another-app-repo",
             "folderName": "AnotherApp",
             "appIconUrl": "link/to/an/image.png"
+        },
+        {
+            "name": "GitLab-hosted Port",
+            "repository": "some-group/some-project",
+            "provider": "gitlab",
+            "folderName": "GitLabPort",
+            "appIconUrl": null
+        },
+        {
+            "name": "Self-hosted GitLab Port",
+            "repository": "some-group/some-project",
+            "provider": "gitlab",
+            "host": "gitlab.example.com",
+            "folderName": "SelfHostedPort",
+            "appIconUrl": null
         }
     ]
 }
 ```
+
+GitLab release assets are read from each release's generic links (`assets.links`); source archive
+links are not included. Update checks for GitLab apps always perform a full fetch (no ETag-based
+caching), since conditional-request support varies across GitLab versions and reverse-proxy setups.
 
 ## Support
 

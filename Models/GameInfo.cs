@@ -35,6 +35,8 @@ namespace GithubLauncher.Models
 
         public string? Name { get; set; }
         public string? Repository { get; set; }
+        public string Provider { get; set; } = "github";
+        public string? Host { get; set; }
         public string? FolderName { get; set; }
         public string? InstallPath { get; set; }
         public string? GameIconUrl { get; set; }
@@ -776,11 +778,11 @@ namespace GithubLauncher.Models
                 else if (isInstalled)
                 {
                     // Installed games: check if needs update (more frequent - every 6 hours by default)
-                    if (GitHubApiCache.NeedsUpdateCheck(Repository ?? string.Empty, isInstalledGame: true))
+                    if (GitHubApiCache.NeedsUpdateCheck(CacheKey, isInstalledGame: true))
                     {
                         await CheckLatestVersionAsync(httpClient).ConfigureAwait(false);
                     }
-                    else if (GitHubApiCache.TryGetCachedVersion(Repository ?? string.Empty, out var cache) && cache != null)
+                    else if (GitHubApiCache.TryGetCachedVersion(CacheKey, out var cache) && cache != null)
                     {
                         // Use cached data
                         LatestVersion = cache.Version;
@@ -790,11 +792,11 @@ namespace GithubLauncher.Models
                 else
                 {
                     // Not-installed games: check less frequently (once per day)
-                    if (GitHubApiCache.NeedsUpdateCheck(Repository ?? string.Empty, isInstalledGame: false))
+                    if (GitHubApiCache.NeedsUpdateCheck(CacheKey, isInstalledGame: false))
                     {
                         await CheckLatestVersionAsync(httpClient).ConfigureAwait(false);
                     }
-                    else if (GitHubApiCache.TryGetCachedVersion(Repository ?? string.Empty, out var cache) && cache != null)
+                    else if (GitHubApiCache.TryGetCachedVersion(CacheKey, out var cache) && cache != null)
                     {
                         // Use cached data
                         LatestVersion = cache.Version;
@@ -1002,7 +1004,7 @@ namespace GithubLauncher.Models
             {
                 _cachedRelease = null;
                 LatestVersion = string.Empty;
-                GitHubApiCache.RemoveCache(Repository);
+                GitHubApiCache.RemoveCache(CacheKey);
 
                 if (File.Exists(versionFile))
                 {
@@ -1510,9 +1512,9 @@ namespace GithubLauncher.Models
 
             try
             {
-                if (!forceCheck && !GitHubApiCache.NeedsUpdateCheck(Repository))
+                if (!forceCheck && !GitHubApiCache.NeedsUpdateCheck(CacheKey))
                 {
-                    if (GitHubApiCache.TryGetCachedVersion(Repository, out var cachedData) && cachedData != null)
+                    if (GitHubApiCache.TryGetCachedVersion(CacheKey, out var cachedData) && cachedData != null)
                     {
                         LatestVersion = cachedData.Version;
                         _cachedRelease = cachedData.CachedRelease;
@@ -1521,19 +1523,21 @@ namespace GithubLauncher.Models
                     return;
                 }
 
-                var result = await GitHubReleaseService.FetchReleasesAsync(
+                var result = await ReleaseService.FetchReleasesAsync(
                     httpClient,
+                    Provider,
                     Repository,
+                    Host,
                     GetGitHubApiToken(),
-                    GitHubApiCache.GetETag(Repository)).ConfigureAwait(false);
+                    GitHubApiCache.GetETag(CacheKey)).ConfigureAwait(false);
 
                 if (result.IsNotModified)
                 {
-                    if (GitHubApiCache.TryGetCachedVersion(Repository, out var existingCache) && existingCache != null)
+                    if (GitHubApiCache.TryGetCachedVersion(CacheKey, out var existingCache) && existingCache != null)
                     {
                         LatestVersion = existingCache.Version;
                         _cachedRelease = existingCache.CachedRelease;
-                        GitHubApiCache.SetCache(Repository, existingCache.Version, existingCache.ETag, existingCache.CachedRelease);
+                        GitHubApiCache.SetCache(CacheKey, existingCache.Version, existingCache.ETag, existingCache.CachedRelease);
                         RefreshInstalledStatus();
                     }
                     return;
@@ -1544,7 +1548,7 @@ namespace GithubLauncher.Models
                 {
                     LatestVersion = latestRelease.tag_name;
                     _cachedRelease = latestRelease;
-                    GitHubApiCache.SetCache(Repository, latestRelease.tag_name, result.ETag ?? string.Empty, latestRelease);
+                    GitHubApiCache.SetCache(CacheKey, latestRelease.tag_name, result.ETag ?? string.Empty, latestRelease);
                     RefreshInstalledStatus();
                 }
                 else
@@ -1566,13 +1570,21 @@ namespace GithubLauncher.Models
             try
             {
                 var settings = AppSettings.Load();
-                return settings?.GitHubApiToken ?? string.Empty;
+                return IsGitLab
+                    ? settings?.GitLabApiToken ?? string.Empty
+                    : settings?.GitHubApiToken ?? string.Empty;
             }
             catch
             {
                 return string.Empty;
             }
         }
+
+        private bool IsGitLab => string.Equals(Provider, "gitlab", StringComparison.OrdinalIgnoreCase);
+
+        // GitHubApiCache is keyed by this string rather than by Repository alone so that
+        // identical "owner/repo" paths on different providers/hosts don't collide.
+        private string CacheKey => $"{(string.IsNullOrWhiteSpace(Provider) ? "github" : Provider.ToLowerInvariant())}:{Host}:{Repository}";
 
         public async Task PerformActionAsync(HttpClient httpClient, string gamesFolder, AppSettings settings)
         {
@@ -1723,9 +1735,11 @@ namespace GithubLauncher.Models
             if (string.IsNullOrWhiteSpace(Repository))
                 return [];
 
-            return await GitHubReleaseService.FetchReleasesWithAssetsAsync(
+            return await ReleaseService.FetchReleasesWithAssetsAsync(
                 httpClient,
+                Provider,
                 Repository,
+                Host,
                 GetGitHubApiToken()).ConfigureAwait(false);
         }
         public async Task InstallReleaseAsync(HttpClient httpClient, string gamesFolder, AppSettings settings, GitHubRelease release, GitHubAsset selectedAsset)
@@ -1765,16 +1779,18 @@ namespace GithubLauncher.Models
                 // Check for a cached release first
                 if (latestRelease == null)
                 {
-                    if (GitHubApiCache.TryGetCachedVersion(Repository, out var cache) && cache?.CachedRelease != null)
+                    if (GitHubApiCache.TryGetCachedVersion(CacheKey, out var cache) && cache?.CachedRelease != null)
                     {
                         latestRelease = cache.CachedRelease;
                     }
                     else
                     {
                         DownloadProgress = 5;
-                        var releaseResult = await GitHubReleaseService.FetchReleasesAsync(
+                        var releaseResult = await ReleaseService.FetchReleasesAsync(
                             httpClient,
+                            Provider,
                             Repository,
+                            Host,
                             GetGitHubApiToken()).ConfigureAwait(false);
 
                         if (releaseResult.Releases.Count == 0)
@@ -1795,7 +1811,7 @@ namespace GithubLauncher.Models
                             return;
                         }
 
-                        GitHubApiCache.SetCache(Repository, latestRelease.tag_name, releaseResult.ETag ?? string.Empty, latestRelease);
+                        GitHubApiCache.SetCache(CacheKey, latestRelease.tag_name, releaseResult.ETag ?? string.Empty, latestRelease);
                     }
                 }
 
@@ -1877,7 +1893,8 @@ namespace GithubLauncher.Models
                 }
 
                 // Download the asset
-                var downloadPath = Path.Combine(Path.GetTempPath(), asset.name);
+                string effectiveAssetName = asset.name;
+                string downloadPath = string.Empty;
 
                 try
                 {
@@ -1886,6 +1903,22 @@ namespace GithubLauncher.Models
                         using (var downloadResponse = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead))
                         {
                             downloadResponse.EnsureSuccessStatusCode();
+
+                            // Some release links (e.g. GitLab entries pointing at a generic file host)
+                            // give an asset name with no extension. Fall back to the real filename
+                            // from the response so installation can tell which archive format it is.
+                            if (!Path.HasExtension(effectiveAssetName))
+                            {
+                                var realFileName = downloadResponse.Content.Headers.ContentDisposition?.FileNameStar
+                                    ?? downloadResponse.Content.Headers.ContentDisposition?.FileName;
+                                realFileName = realFileName?.Trim('"');
+                                if (!string.IsNullOrWhiteSpace(realFileName) && Path.HasExtension(realFileName))
+                                {
+                                    effectiveAssetName = realFileName;
+                                }
+                            }
+
+                            downloadPath = Path.Combine(Path.GetTempPath(), effectiveAssetName);
 
                             var totalBytes = downloadResponse.Content.Headers.ContentLength ?? 0;
                             var canReportProgress = totalBytes > 0;
@@ -1918,7 +1951,7 @@ namespace GithubLauncher.Models
                     Status = GameStatus.Installing;
                     DownloadProgress = 95;
 
-                    await InstallOrUpdateGame(downloadPath, gamePath, asset.name, latestRelease.tag_name);
+                    await InstallOrUpdateGame(downloadPath, gamePath, effectiveAssetName, latestRelease.tag_name);
 
                     DownloadProgress = 100;
                     await Task.Delay(500); // Brief pause to show completion
@@ -1941,8 +1974,8 @@ namespace GithubLauncher.Models
                 finally
                 {
                     // Clean up download file
-                    bool wasSingleExecutable = asset.name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
-                                                asset.name.EndsWith(".appimage", StringComparison.OrdinalIgnoreCase);
+                    bool wasSingleExecutable = effectiveAssetName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ||
+                                                effectiveAssetName.EndsWith(".appimage", StringComparison.OrdinalIgnoreCase);
 
                     if (!wasSingleExecutable && File.Exists(downloadPath))
                     {

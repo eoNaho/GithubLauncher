@@ -26,6 +26,7 @@ namespace GithubLauncher
         public List<string> ManuallyHiddenApps { get; set; } = new List<string>();
         public string AppsPath { get; set; } = string.Empty;
         public string GitHubApiToken { get; set; } = string.Empty;
+        public string GitLabApiToken { get; set; } = string.Empty;
         public string SortBy { get; set; } = "LastPlayed";
         public bool StartFullscreen { get; set; } = false;
         public bool CloseAfterLaunch {  get; set; } = false;
